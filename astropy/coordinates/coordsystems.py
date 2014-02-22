@@ -579,6 +579,85 @@ class SphericalCoordinatesBase(object):
 
         return match_coordinates_sky(self, catalogcoord, nthneighbor=nthneighbor, storekdtree=True)
 
+    def match_catalog_nearby_3d(self, catalogcoord, dist):
+        """
+        Finds all 3-dimensional coordinates in a set of catalog coordinates
+        within a given distance from this coordinate.
+
+        Parameters
+        ----------
+        catalogcoord : `~astropy.coordinates.SphericalCoordinatesBase`
+            The base catalog in which to search for matches. Typically this
+            will be a coordinate object that is an array (i.e.,
+            ``catalogcoord.isscalar == False``)
+        dist : number
+            The maximum distance from this coordinate at which matches should
+            be found.
+
+        Returns
+        -------
+        idx : array of integer tuples
+            Holds tuples of indices for `catalogcoord` representing the matched points for each
+            `matchcoord`. Shape matches this coordinate.
+        sep2d : `~astropy.units.quantity.Angle` tuple
+            The on-sky separations between the closest match for each `matchcoord` and
+            each `matchcoord`. Shape matches `matchcoord`.
+        dist3d : `~astropy.units.quantity.Quantity` tuple
+            The 3D distances between the closest match for each `matchcoord` and
+            each `matchcoord`. Shape matches this coordinate.
+
+        Notes
+        -----
+        This method requires `scipy` to be installed or it will fail.
+
+        See Also
+        --------
+        astropy.coordinates.matching.match_nearby_3d
+        """
+        from .matching import match_nearby_3d
+
+        return match_nearby_3d(self, catalogcoord, dist, storekdtree=True)
+
+    def match_catalog_nearby_sky(self, catalogcoord, dist):
+        """
+        Finds the nearest on-sky matches of this coordinate in a set of
+        catalog coordinates.
+
+        Parameters
+        ----------
+        catalogcoord : `~astropy.coordinates.SphericalCoordinatesBase`
+            The base catalog in which to search for matches. Typically this
+            will be a coordinate object that is an array (i.e.,
+            ``catalogcoord.isscalar == False``)
+        dist : number
+            The maximum distance from this coordinate at which matches should
+            be found.
+
+        Returns
+        -------
+        idx : array of integer tuples
+            Holds tuples of indices for `catalogcoord` representing the matched points for each
+            `matchcoord`. Shape matches this coordinate.
+        sep2d : `~astropy.units.quantity.Angle` tuple
+            The on-sky separations between the closest match for each `matchcoord` and
+            each `matchcoord`. Shape matches `matchcoord`.
+        dist3d : `~astropy.units.quantity.Quantity` tuple
+            The 3D distances between the closest match for each `matchcoord` and
+            each `matchcoord`. Shape matches this coordinate.
+
+        Notes
+        -----
+        This method requires `scipy` to be installed or it will fail.
+
+        See Also
+        --------
+        astropy.coordinates.matching.match_nearby_sky
+        """
+        from .matching import match_nearby_sky
+
+        return match_nearby_sky(self, catalogcoord, dist, storekdtree=True)
+
+
     #<------------transformation-related stuff here-------------------->
     def transform_to(self, tosys):
         """
