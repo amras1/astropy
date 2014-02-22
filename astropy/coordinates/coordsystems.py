@@ -620,8 +620,8 @@ class SphericalCoordinatesBase(object):
 
     def match_catalog_nearby_sky(self, catalogcoord, dist):
         """
-        Finds the nearest on-sky matches of this coordinate in a set of
-        catalog coordinates.
+        Finds all coordinates in a set of catalog coordinates
+        within a given on-sky distance from this coordinate.
 
         Parameters
         ----------
