@@ -516,7 +516,7 @@ class SphericalCoordinatesBase(object):
         Returns
         -------
         idx : integer array
-            Indecies into `catalogcoord` to get the matched points for each
+            Indices into `catalogcoord` to get the matched points for each
             `matchcoord`. Shape matches this coordinate.
         sep2d : `~astropy.units.quantity.Angle`
             The on-sky separation between the closest match for each `matchcoord` and
@@ -558,7 +558,7 @@ class SphericalCoordinatesBase(object):
         Returns
         -------
         idx : integer array
-            Indecies into `catalogcoord` to get the matched points for each
+            Indices into `catalogcoord` to get the matched points for each
             `matchcoord`. Shape matches this coordinate.
         sep2d : `~astropy.units.quantity.Angle`
             The on-sky separation between the closest match for each `matchcoord` and
