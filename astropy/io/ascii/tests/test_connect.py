@@ -8,11 +8,17 @@ ROOT = os.path.abspath(os.path.dirname(__file__))
 
 files = ['t/cds.dat', 't/ipac.dat', 't/daophot.dat', 't/latex1.tex',
          'simple_csv.csv']
+
+# Check to see if the BeautifulSoup dependency is present.
+
 try:
-    import bs4
-    files.append('t/html.html')
+    from bs4 import BeautifulSoup
+    HAS_BEAUTIFUL_SOUP = True
 except ImportError:
-    pass
+    HAS_BEAUTIFUL_SOUP = False
+    
+if HAS_BEAUTIFUL_SOUP:
+    files.append('t/html.html')
 
 @pytest.mark.parametrize('filename', files)
 
@@ -63,10 +69,12 @@ def test_write_latex_noformat(tmpdir):
     t.write(path)
 
 
+@pytest.mark.skipif('not HAS_BEAUTIFUL_SOUP')
 def test_read_html():
     Table.read(os.path.join(ROOT, 't/html.html'), format='html')
 
 
+@pytest.mark.skipif('not HAS_BEAUTIFUL_SOUP')
 def test_read_html_noformat():
     Table.read(os.path.join(ROOT, 't/html.html'))
 
