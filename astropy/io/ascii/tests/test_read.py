@@ -685,10 +685,6 @@ def get_testfiles(name=None):
          'name': 't/latex2.tex',
          'nrows': 3,
          'opts': {'Reader': asciitable.AASTex}},
-        {'cols': ('Column 1', 'Column 2', 'Column 3'),
-         'name': 't/html.html',
-         'nrows': 3,
-         'opts': {'Reader': asciitable.HTML}},
     ]
 
     try:
