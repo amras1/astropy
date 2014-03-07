@@ -203,7 +203,9 @@ def _guess(table, read_kwargs):
                 raise ValueError
             return dat
 
-        except (core.InconsistentTableError, ValueError, TypeError):
+        except (core.InconsistentTableError, ValueError, TypeError) as e:
+            print('***')
+            print(e)
             failed_kwargs.append(guess_kwargs)
             pass
     else:
