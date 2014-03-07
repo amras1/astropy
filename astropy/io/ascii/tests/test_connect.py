@@ -7,7 +7,7 @@ from ....table import Table, Column
 ROOT = os.path.abspath(os.path.dirname(__file__))
 
 files = ['t/cds.dat', 't/ipac.dat', 't/daophot.dat', 't/latex1.tex',
-         'simple_csv.csv']
+         't/simple_csv.csv']
 
 # Check to see if the BeautifulSoup dependency is present.
 
