@@ -211,7 +211,8 @@ def _guess(table, read_kwargs):
         try:
             reader = get_reader(**read_kwargs)
             return reader.read(table)
-        except (core.InconsistentTableError, ValueError):
+        except (core.InconsistentTableError, ValueError) as e:
+            print(e)
             failed_kwargs.append(read_kwargs)
             lines = ['\nERROR: Unable to guess table for with the guesses listed below:']
             for kwargs in failed_kwargs:
