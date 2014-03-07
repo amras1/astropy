@@ -6,10 +6,16 @@ from ....table import Table, Column
 
 ROOT = os.path.abspath(os.path.dirname(__file__))
 
+files = ['t/cds.dat', 't/ipac.dat', 't/daophot.dat', 't/latex1.tex',
+         'simple_csv.csv']
+try:
+    import bs4
+    files.append('t/html.html')
+except ImportError:
+    pass
 
-@pytest.mark.parametrize('filename', ['t/cds.dat', 't/ipac.dat',
-                                      't/daophot.dat', 't/latex1.tex',
-                                      't/simple_csv.csv', 't/html.html'])
+@pytest.mark.parametrize('filename', files)
+
 def test_read_generic(filename):
     Table.read(os.path.join(ROOT, filename), format='ascii')
 
