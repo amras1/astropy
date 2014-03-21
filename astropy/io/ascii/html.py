@@ -13,7 +13,7 @@ from ...extern import six
 from ...extern.six.moves import zip as izip
 
 from . import core
-from ...table import Table, Column
+from ...table import Column
 from ...utils.xml import writer
 
 class SoupString(str):
@@ -76,7 +76,6 @@ class HTMLInputter(core.BaseInputter):
         
         try:
             from bs4 import BeautifulSoup
-            from bs4.element import Comment
         except ImportError:
             raise core.OptionalTableImportError('BeautifulSoup must be '
                                         'installed to read HTML tables')
@@ -90,11 +89,9 @@ class HTMLInputter(core.BaseInputter):
         else:
             return [] # The correct table was not found
         
-        soup_list = []
-        for x in table.children:
-            if str(x).strip() and x.name == 'tr':
-                soup_obj = SoupString(x)
-                soup_list.append(soup_obj)
+        # Get all table rows
+        soup_list = [SoupString(x) for x in table.find_all('tr')]
+
         return soup_list
         
 class HTMLSplitter(core.BaseSplitter):
@@ -113,11 +110,11 @@ class HTMLSplitter(core.BaseSplitter):
             header_elements = soup.find_all('th')
             if header_elements:
                 # Return multicolumns as tuples for HTMLHeader handling
-                yield [(el.string.strip(), el['colspan']) if el.has_attr('colspan')
-                        else el.string.strip() for el in header_elements]
+                yield [(el.text.strip(), el['colspan']) if el.has_attr('colspan')
+                        else el.text.strip() for el in header_elements]
             data_elements = soup.find_all('td')
             if data_elements:
-                yield [el.string.strip() for el in data_elements]
+                yield [el.text.strip() for el in data_elements]
         if len(lines) == 0:
             raise core.InconsistentTableError('HTML tables must contain data '
                                               'in a <table> tag')
@@ -135,18 +132,16 @@ class HTMLOutputter(core.TableOutputter):
         """
         Process the data in multidimensional columns.
         """
-        self._convert_vals(cols)
         new_cols = []
         col_num = 0
 
         while col_num < len(cols):
             col = cols[col_num]
             if hasattr(col, 'colspan'):
-                # Join elements of spanned columns together into tuples
-                data = [tuple([cols[i].data[row] for i in range(col_num,
-                    col_num + col.colspan)]) for row in range(len(col.data))]
+                # Join elements of spanned columns together into list of tuples
+                span_cols = cols[col_num:col_num + col.colspan]
                 new_col = core.Column(col.name)
-                new_col.data = data
+                new_col.str_vals = list(izip(*[x.str_vals for x in span_cols]))
                 new_cols.append(new_col)
                 col_num += col.colspan
             else:

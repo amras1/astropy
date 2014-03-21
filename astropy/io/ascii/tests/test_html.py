@@ -12,6 +12,8 @@ from .. import html
 from .. import core
 from ....table import Table
 
+import numpy as np
+
 from ....tests.helper import pytest
 from ....extern.six.moves import zip as izip
 from .common import (raises, assert_equal, assert_almost_equal,
@@ -82,6 +84,91 @@ def test_identify_table():
     # Test identification by string ID
     assert html.identify_table(soup, {'table_id': 'bar'}, 1) is False
     assert html.identify_table(soup, {'table_id': 'foo'}, 1) is True
+
+
+def test_missing_data():
+    """
+    Test reading a table with missing data
+    """
+    # First with default where blank => '0'
+    table_in = ['<table>',
+                '<tr><th>A</th></tr>',
+                '<tr><td></td></tr>',
+                '<tr><td>1</td></tr>',
+                '</table>']
+    dat = Table.read(table_in, format='ascii.html')
+    assert dat.masked is True
+    assert np.all(dat['A'].mask == [True, False])
+    assert dat['A'].dtype.kind == 'i'
+
+    # Now with a specific value '...' => missing
+    table_in = ['<table>',
+                '<tr><th>A</th></tr>',
+                '<tr><td>...</td></tr>',
+                '<tr><td>1</td></tr>',
+                '</table>']
+    dat = Table.read(table_in, format='ascii.html', fill_values=[('...', '0')])
+    assert dat.masked is True
+    assert np.all(dat['A'].mask == [True, False])
+    assert dat['A'].dtype.kind == 'i'
+
+
+def test_rename_cols():
+    """
+    Test reading a table and renaming cols
+    """
+    table_in = ['<table>',
+                '<tr><th>A</th> <th>B</th></tr>',
+                '<tr><td>1</td><td>2</td></tr>',
+                '</table>']
+
+    # Swap column names
+    dat = Table.read(table_in, format='ascii.html', names=['B', 'A'])
+    assert dat.colnames == ['B', 'A']
+    assert len(dat) == 1
+
+    # Swap column names and only include A (the renamed version)
+    dat = Table.read(table_in, format='ascii.html', names=['B', 'A'], include_names=['A'])
+    assert dat.colnames == ['A']
+    assert len(dat) == 1
+    assert np.all(dat['A'] == 2)
+
+
+def test_no_names():
+    """
+    Test reading a table witn no column header
+    """
+    table_in = ['<table>',
+                '<tr><td>1</td></tr>',
+                '<tr><td>2</td></tr>',
+                '</table>']
+    dat = Table.read(table_in, format='ascii.html')
+    assert dat.colnames == ['col1']
+    assert len(dat) == 2
+
+    dat = Table.read(table_in, format='ascii.html', names=['a'])
+    assert dat.colnames == ['a']
+    assert len(dat) == 2
+
+
+def test_identify_table_fail():
+    """
+    Raise an exception with an informative error message if table_id
+    is not found.
+    """
+    table_in = ['<table id="foo"><tr><th>A</th></tr>',
+                '<tr><td>B</td></tr></table>']
+
+    with pytest.raises(core.InconsistentTableError) as err:
+        Table.read(table_in, format='ascii.html', htmldict={'table_id': 'bad_id'},
+                   guess=False)
+    assert str(err) == "ERROR: HTML table id 'bad_id' not found"
+
+    with pytest.raises(core.InconsistentTableError) as err:
+        Table.read(table_in, format='ascii.html', htmldict={'table_id': 3},
+                   guess=False)
+    assert str(err) == "ERROR: HTML table number 3 not found"
+
 
 @pytest.mark.skipif('HAS_BEAUTIFUL_SOUP')
 def test_htmlinputter_no_bs4():
@@ -356,10 +443,13 @@ def test_multicolumn_read():
     Test to make sure that the HTML reader inputs multimensional
     columns (those with iterable elements) using the colspan
     attribute of <th>.
+
+    Ensure that any string element within a multidimensional column
+    casts all elements to string prior to type conversion operations.
     """
 
     table = Table.read('t/html2.html', format='ascii.html')
-    col1 = [(1, 2)]
-    col2 = [3]
-    expected = Table([col1, col2], names=('A', 'B'))
-    assert table == expected
+    expected = Table(np.array([(['1', '2.5000000000000000001'], 3),
+                               (['1a', '1'], 3.5)],
+                              dtype=[('A', 'S21', (2,)), ('B', '<f8')]))
+    assert np.all(table == expected)
