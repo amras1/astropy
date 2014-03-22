@@ -456,5 +456,5 @@ def test_multicolumn_read():
     table = Table.read('t/html2.html', format='ascii.html')
     expected = Table(np.array([(['1', '2.5000000000000000001'], 3),
                                (['1a', '1'], 3.5)],
-                              dtype=[('A', 'S21', (2,)), ('B', '<f8')]))
+                              dtype=[('A', np.str, (2,)), ('B', '<f8')]))
     assert np.all(table == expected)
