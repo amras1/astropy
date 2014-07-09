@@ -114,6 +114,14 @@ class TestRunner(object):
         """
         The docstring for this method lives in astropy/__init__.py:test
         """
+        try:
+            get_ipython()
+        except NameError:
+            pass
+        else:
+            raise RuntimeError(
+                "Running astropy tests inside of IPython is not supported.")
+
         if coverage:
             warnings.warn(
                 "The coverage option is ignored on run_tests, since it "
@@ -241,8 +249,10 @@ class TestRunner(object):
         # existing cache or config
         xdg_config_home = os.environ.get('XDG_CONFIG_HOME')
         xdg_cache_home = os.environ.get('XDG_CACHE_HOME')
-        os.environ['XDG_CONFIG_HOME'] = tempfile.mkdtemp('astropy_config')
-        os.environ['XDG_CACHE_HOME'] = tempfile.mkdtemp('astropy_cache')
+        astropy_config = tempfile.mkdtemp('astropy_config')
+        astropy_cache = tempfile.mkdtemp('astropy_cache')
+        os.environ[str('XDG_CONFIG_HOME')] = str(astropy_config)
+        os.environ[str('XDG_CACHE_HOME')] = str(astropy_cache)
         os.mkdir(os.path.join(os.environ['XDG_CONFIG_HOME'], 'astropy'))
         os.mkdir(os.path.join(os.environ['XDG_CACHE_HOME'], 'astropy'))
         # To fully force configuration reloading from a different file (in this
@@ -261,11 +271,11 @@ class TestRunner(object):
             shutil.rmtree(os.environ['XDG_CONFIG_HOME'])
             shutil.rmtree(os.environ['XDG_CACHE_HOME'])
             if xdg_config_home is not None:
-                os.environ['XDG_CONFIG_HOME'] = xdg_config_home
+                os.environ[str('XDG_CONFIG_HOME')] = xdg_config_home
             else:
                 del os.environ['XDG_CONFIG_HOME']
             if xdg_cache_home is not None:
-                os.environ['XDG_CACHE_HOME'] = xdg_cache_home
+                os.environ[str('XDG_CACHE_HOME')] = xdg_cache_home
             else:
                 del os.environ['XDG_CACHE_HOME']
             configuration._cfgobjs.clear()
@@ -642,8 +652,8 @@ class astropy_test(Command, object):
                 # We create a coveragerc that is specific to the version
                 # of Python we're running, so that we can mark branches
                 # as being specifically for Python 2 or Python 3
-                with open(coveragerc, 'r') as fd:
-                    coveragerc_content = fd.read()
+                with open(coveragerc, 'rb') as fd:
+                    coveragerc_content = fd.read().decode('utf-8')
                 if six.PY3:
                     ignore_python_version = '2'
                 elif six.PY2:

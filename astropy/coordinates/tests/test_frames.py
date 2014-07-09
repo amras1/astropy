@@ -11,6 +11,69 @@ from ... import units as u
 from ...tests.helper import pytest
 from .. import representation
 
+
+def test_frame_attribute_descriptor():
+    """ Unit tests of the FrameAttribute descriptor """
+    from ..baseframe import FrameAttribute
+
+    class TestFrameAttributes(object):
+        attr_none = FrameAttribute()
+        attr_2 = FrameAttribute(default=2)
+        attr_3_attr2 = FrameAttribute(default=3, secondary_attribute='attr_2')
+        attr_none_attr2 = FrameAttribute(default=None, secondary_attribute='attr_2')
+        attr_none_nonexist = FrameAttribute(default=None, secondary_attribute='nonexist')
+
+    t = TestFrameAttributes()
+
+    # Defaults
+    assert t.attr_none is None
+    assert t.attr_2 == 2
+    assert t.attr_3_attr2 == 3
+    assert t.attr_none_attr2 == t.attr_2
+    assert t.attr_none_nonexist is None  # No default and non-existent secondary attr
+
+    # Setting values via '_'-prefixed internal vars (as would normally done in __init__)
+    t._attr_none = 10
+    assert t.attr_none == 10
+
+    t._attr_2 = 20
+    assert t.attr_2 == 20
+    assert t.attr_3_attr2 == 3
+    assert t.attr_none_attr2 == t.attr_2
+
+    t._attr_none_attr2 = 40
+    assert t.attr_none_attr2 == 40
+
+    # Make sure setting values via public attribute fails
+    with pytest.raises(AttributeError) as err:
+        t.attr_none = 5
+    assert 'Cannot set frame attribute' in str(err)
+
+
+def test_frame_subclass_attribute_descriptor():
+    from ..builtin_frames import FK4
+    from ..baseframe import FrameAttribute, TimeFrameAttribute
+    from astropy.time import Time
+
+    _EQUINOX_B1980 = Time('B1980', scale='tai')
+
+    class MyFK4(FK4):
+        # equinox inherited from FK4, obstime overridden, and newattr is new
+        obstime = TimeFrameAttribute(default=_EQUINOX_B1980)
+        newattr = FrameAttribute(default='newattr')
+
+    mfk4 = MyFK4()
+    assert mfk4.equinox.value == 'B1950.000'
+    assert mfk4.obstime.value == 'B1980.000'
+    assert mfk4.newattr == 'newattr'
+    assert set(mfk4.get_frame_attr_names()) == set(['equinox', 'obstime', 'newattr'])
+
+    mfk4 = MyFK4(equinox='J1980.0', obstime='J1990.0', newattr='world')
+    assert mfk4.equinox.value == 'J1980.000'
+    assert mfk4.obstime.value == 'J1990.000'
+    assert mfk4.newattr == 'world'
+
+
 def test_create_data_frames():
     from ..builtin_frames import ICRS
 
@@ -67,16 +130,17 @@ def test_create_nodata_frames():
     from ..builtin_frames import ICRS, FK4, FK5
 
     i = ICRS()
-    assert len(i.frame_attr_names) == 0
+    assert len(i.get_frame_attr_names()) == 0
 
     f5 = FK5()
-    assert f5.equinox == FK5.frame_attr_names['equinox']
+    assert f5.equinox == FK5.get_frame_attr_names()['equinox']
 
     f4 = FK4()
-    assert f4.equinox == FK4.frame_attr_names['equinox']
+    assert f4.equinox == FK4.get_frame_attr_names()['equinox']
 
     #obstime is special because it's a property that uses equinox if obstime is not set
-    assert f4.obstime in (FK4.frame_attr_names['obstime'], FK4.frame_attr_names['equinox'])
+    assert f4.obstime in (FK4.get_frame_attr_names()['obstime'],
+                          FK4.get_frame_attr_names()['equinox'])
 
 
 def test_frame_repr():
@@ -98,6 +162,7 @@ def test_frame_repr():
 
 def test_converting_units():
     import re
+    from ..baseframe import RepresentationMapping
     from ..builtin_frames import ICRS, FK5
     from ..representation import SphericalRepresentation
 
@@ -119,12 +184,20 @@ def test_converting_units():
 
     #but that *shouldn't* hold if we turn off units for the representation
     class FakeICRS(ICRS):
-        _frame_specific_representation_info = {
+        frame_specific_representation_info = {
             'spherical': {'names': ('ra', 'dec', 'distance'),
                           'units': (None, None, None)},
             'unitspherical': {'names': ('ra', 'dec'),
-                              'units': (None, None)}}
+                              'units': (None, None)}
+        }
 
+        frame_specific_representation_info = {
+            'spherical': [RepresentationMapping('lon', 'ra', u.hourangle),
+                          RepresentationMapping('lat', 'dec', None),
+                          RepresentationMapping('distance', 'distance')]  # should fall back to default of None unit
+        }
+        frame_specific_representation_info['unitspherical'] = \
+            frame_specific_representation_info['spherical']
 
     fi = FakeICRS(i4.data)
     ri2 = ''.join(rexrepr.split(repr(i2)))
@@ -133,9 +206,11 @@ def test_converting_units():
     assert ri2 != rfi
 
     # the attributes should also get the right units
-    assert i2.ra.unit == i4.ra.unit
-    # unless no units
+    assert i2.dec.unit == i4.dec.unit
+    # unless no/explicitly given units
+    assert i2.dec.unit != fi.dec.unit
     assert i2.ra.unit != fi.ra.unit
+    assert fi.ra.unit == u.hourangle
 
 
 def test_realizing():
@@ -157,7 +232,7 @@ def test_realizing():
     assert f2.has_data
 
     assert f2.equinox == f.equinox
-    assert f2.equinox != FK5.frame_attr_names['equinox']
+    assert f2.equinox != FK5.get_frame_attr_names()['equinox']
 
 
 def test_getitem():
@@ -205,7 +280,7 @@ def test_transform():
     f4_2 = f.transform_to(FK4(equinox=f.equinox))
 
     #make sure attributes are copied over correctly
-    assert f4.equinox == FK4.frame_attr_names['equinox']
+    assert f4.equinox == FK4.get_frame_attr_names()['equinox']
     assert f4_2.equinox == f.equinox
 
 
@@ -280,7 +355,7 @@ def test_is_frame_attr_default():
     from ..builtin_frames import FK5
 
     c1 = FK5(ra=1*u.deg, dec=1*u.deg)
-    c2 = FK5(ra=1*u.deg, dec=1*u.deg, equinox=FK5.frame_attr_names['equinox'])
+    c2 = FK5(ra=1*u.deg, dec=1*u.deg, equinox=FK5.get_frame_attr_names()['equinox'])
     c3 = FK5(ra=1*u.deg, dec=1*u.deg, equinox=Time('J2001.5'))
 
     assert c1.equinox == c2.equinox
@@ -377,6 +452,19 @@ def test_representation():
     assert 'but must be a BaseRepresentation class' in str(err)
 
 
+def test_represent_as():
+    from ..builtin_frames import ICRS
+
+    icrs = ICRS(ra=1*u.deg, dec=1*u.deg)
+
+    cart1 = icrs.represent_as('cartesian')
+    cart2 = icrs.represent_as(representation.CartesianRepresentation)
+
+    cart1.x == cart2.x
+    cart1.y == cart2.y
+    cart1.z == cart2.z
+
+
 def test_dynamic_attrs():
     from ..builtin_frames import ICRS
     c = ICRS(1*u.deg, 2*u.deg)
@@ -407,4 +495,3 @@ def test_len0_data():
     i = ICRS([]*u.deg, []*u.deg)
     assert i.has_data
     repr(i)
-

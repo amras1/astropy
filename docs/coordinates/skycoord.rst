@@ -70,17 +70,18 @@ The coordinate values and frame specification can now be provided using
 positional and keyword arguments.  First we show positional arguments for
 RA and Dec::
 
-  >>> SkyCoord(10, 20, unit="deg")  # No frame (no transform to other frames)
-  <SkyCoord (NoFrame): ra=10.0 deg, dec=20.0 deg>
+  >>> SkyCoord(10, 20, unit="deg")  # Defaults to ICRS
+  <SkyCoord (ICRS): ra=10.0 deg, dec=20.0 deg>
 
   >>> SkyCoord([1, 2, 3], [-30, 45, 8], "icrs", unit="deg")
   <SkyCoord (ICRS): (ra, dec) in deg
       [(1.0, -30.0), (2.0, 45.0), (3.0, 8.0)]>
 
-Notice that the first example above does not specify a frame.  This object
-can be used for displaying the coordinates in different formats but cannot
-be used in transformations, matching catalogs, nor in computing coordinate
-separations.
+Notice that the first example above does not explicitly give a frame.  In
+this case, the default is taken to be the ICRS system (approximately
+correct for "J2000" equatorial coordinates).  It is always better to
+explicitly specify the frame when it is known to be ICRS, however, as
+anyone reading the code will be better able to understand the intent.
 
 String inputs in common formats are acceptable, and the frame can be supplied
 as either a class type like `~astropy.coordinates.FK4` or the lower-case
@@ -199,7 +200,7 @@ to astropy are `~astropy.coordinates.ICRS`, `~astropy.coordinates.FK5`,
 `~astropy.coordinates.Galactic`, and `~astropy.coordinates.AltAz`.
 The string aliases are simply lower-case versions of the class name.
 
-If the frame is not supplied then you will see a special ``NoFrame``
+If the frame is not supplied then you will see a special ``ICRS``
 identifer.  This indicates that the frame is unspecified and operations
 that require comparing coordinates (even within that object) are not allowed.
 
@@ -292,18 +293,26 @@ documentation::
 
   >>> sc = SkyCoord(1, 2, 'icrs', unit='deg', obstime='2013-01-02 14:25:36')
   >>> sc.<TAB>  # doctest: +SKIP
-  sc.cartesian              sc.has_data               sc.represent_as
-  sc.data                   sc.icrs                   sc.representation
-  sc.dec                    sc.is_frame_attr_default  sc.representation_info
-  sc.distance               sc.is_transformable_to    sc.representation_names
-  sc.equinox                sc.isscalar               sc.representation_units
-  sc.fk4                    sc.match_to_catalog_3d    sc.separation
-  sc.fk4noeterms            sc.match_to_catalog_sky   sc.separation_3d
-  sc.fk5                    sc.name                   sc.shape
-  sc.frame                  sc.obstime                sc.spherical
-  sc.frame_attr_names       sc.position_angle         sc.time_attr_names
-  sc.from_name              sc.ra                     sc.to_string
-  sc.galactic               sc.realize_frame          sc.transform_to
+  sc.cartesian                           sc.match_to_catalog_3d
+  sc.data                                sc.match_to_catalog_sky
+  sc.dec                                 sc.name
+  sc.default_representation              sc.obstime
+  sc.distance                            sc.position_angle
+  sc.equinox                             sc.ra
+  sc.fk4                                 sc.realize_frame
+  sc.fk4noeterms                         sc.represent_as
+  sc.fk5                                 sc.representation
+  sc.frame                               sc.representation_component_names
+  sc.frame_attr_names                    sc.representation_component_units
+  sc.frame_specific_representation_info  sc.representation_info
+  sc.from_name                           sc.separation
+  sc.galactic                            sc.separation_3d
+  sc.get_frame_attr_names                sc.shape
+  sc.has_data                            sc.spherical
+  sc.icrs                                sc.time_attr_names
+  sc.is_frame_attr_default               sc.to_string
+  sc.is_transformable_to                 sc.transform_to
+  sc.isscalar
 
 Here we see a bunch of stuff there but much of it should be recognizable or
 easily guessed.  The most obvious may be the longitude and latitude attributes
@@ -321,8 +330,8 @@ properties, accessing these attributes calls the object
 new |SkyCoord| object in the requested frame::
 
   >>> sc_gal = sc.galactic
-  >>> sc_gal
-  <SkyCoord (Galactic): l=99.637943... deg, b=-58.709605... deg>
+  >>> sc_gal  # doctest: +FLOAT_CMP
+  <SkyCoord (Galactic): l=99.6379436471 deg, b=-58.7096055983 deg>
 
 Other attributes you should recognize are ``distance``, ``equinox``,
 ``obstime``, ``shape``.
@@ -336,10 +345,10 @@ labeled ``l`` and ``b``, following the normal convention for Galactic
 coordinates.  How does the object know what to call its values?  The answer
 lies in some less-obvious attributes::
 
-  >>> sc_gal.representation_names
+  >>> sc_gal.representation_component_names
   OrderedDict([(u'l', u'lon'), (u'b', u'lat'), (u'distance', u'distance')])
 
-  >>> sc_gal.representation_units
+  >>> sc_gal.representation_component_units
   OrderedDict([(u'l', Unit("deg")), (u'b', Unit("deg"))])
 
   >>> sc_gal.representation
@@ -348,27 +357,23 @@ lies in some less-obvious attributes::
 Together these tell the object that ``l`` and ``b`` are the longitude and
 latitude, and that they should both be displayed in units of degrees as
 a spherical-type coordinate (and not, e.g. a cartesian coordinate).
-Furthermore the frame's ``representation_names`` attribute defines
+Furthermore the frame's ``representation_component_names`` attribute defines
 the coordinate keyword arguments that |SkyCoord| will accept.
 
 Another important attribute is ``frame_attr_names``, which defines the
 additional attributes that are required to fully define the frame::
 
   >>> sc_fk4 = SkyCoord(1, 2, 'fk4', unit='deg')
-  >>> sc_fk4.frame_attr_names
+  >>> sc_fk4.get_frame_attr_names()
   {u'equinox': <Time object: scale='tai' format='byear_str' value=B1950.000>,
    u'obstime': None}
 
 The key values correspond to the defaults if no explicit value is provide by
 the user.  This example shows that the `~astropy.coordinates.FK4` frame has two
 attributes ``equinox`` and ``obstime`` that are required to fully define the
-frame.  These are actually a reference to the class attribute of the same
-name::
+frame.
 
-  >>> FK4.frame_attr_names is sc_fk4.frame_attr_names
-  True
-
-Further trickery is happening here because many of these attributes are
+Some trickery is happening here because many of these attributes are
 actually owned by the underlying coordinate ``frame`` object which does much of
 the real work.  This is the middle layer in the three-tiered system of objects:
 representation (spherical, cartesian, etc.), frame (aka low-level frame class),
@@ -381,15 +386,19 @@ and |SkyCoord| (aka high-level class)::
   True
 
   >>> sc.frame.<TAB>  # doctest: +SKIP
-  sc.frame.cartesian              sc.frame.isscalar               sc.frame.representation_units
-  sc.frame.data                   sc.frame.name                   sc.frame.separation
-  sc.frame.dec                    sc.frame.ra                     sc.frame.separation_3d
-  sc.frame.distance               sc.frame.realize_frame          sc.frame.shape
-  sc.frame.frame_attr_names       sc.frame.represent_as           sc.frame.spherical
-  sc.frame.has_data               sc.frame.representation         sc.frame.time_attr_names
-  sc.frame.is_frame_attr_default  sc.frame.representation_info   sc.frame.transform_to
-  sc.frame.is_transformable_to    sc.frame.representation_names
-
+  sc.frame.cartesian                           sc.frame.ra
+  sc.frame.data                                sc.frame.realize_frame
+  sc.frame.dec                                 sc.frame.represent_as
+  sc.frame.default_representation              sc.frame.representation
+  sc.frame.distance                            sc.frame.representation_component_names
+  sc.frame.frame_attr_names                    sc.frame.representation_component_units
+  sc.frame.frame_specific_representation_info  sc.frame.representation_info
+  sc.frame.get_frame_attr_names                sc.frame.separation
+  sc.frame.has_data                            sc.frame.separation_3d
+  sc.frame.is_frame_attr_default               sc.frame.shape
+  sc.frame.is_transformable_to                 sc.frame.spherical
+  sc.frame.isscalar                            sc.frame.time_attr_names
+  sc.frame.name                                sc.frame.transform_to
   >>> sc.frame.name
   'icrs'
 
@@ -421,21 +430,21 @@ name, frame class, frame instance, or |SkyCoord|::
 
   >>> from astropy.coordinates import FK5
   >>> sc = SkyCoord(1, 2, 'icrs', unit='deg')
-  >>> sc.galactic
-  <SkyCoord (Galactic): l=99.637943... deg, b=-58.709605... deg>
+  >>> sc.galactic  # doctest: +FLOAT_CMP
+  <SkyCoord (Galactic): l=99.6379436471 deg, b=-58.7096055983 deg>
 
-  >>> sc.transform_to('fk5')  # Same as sc.fk5 and sc.transform_to(FK5)
-  <SkyCoord (FK5): equinox=J2000.000, ra=1.00000655... deg, dec=2.00000243... deg>
+  >>> sc.transform_to('fk5')  # Same as sc.fk5 and sc.transform_to(FK5)  # doctest: +FLOAT_CMP
+  <SkyCoord (FK5): equinox=J2000.000, ra=1.00000655566 deg, dec=2.00000243092 deg>
 
-  >>> sc.transform_to(FK5(equinox='J1975'))  # Transform to FK5 with a different equinox
-  <SkyCoord (FK5): equinox=J1975.000, ra=0.679672... deg, dec=1.860830... deg>
+  >>> sc.transform_to(FK5(equinox='J1975'))  # Transform to FK5 with a different equinox  # doctest: +FLOAT_CMP
+  <SkyCoord (FK5): equinox=J1975.000, ra=0.679672818323 deg, dec=1.86083014099 deg>
 
 Transforming to a |SkyCoord| instance is an easy way of ensuring that two
 coordinates are in the exact same reference frame::
 
   >>> sc2 = SkyCoord(3, 4, 'fk4', unit='deg', obstime='J1978.123', equinox='B1960.0')
   >>> sc.transform_to(sc2)
-  <SkyCoord (FK4): equinox=B1960.000, obstime=J1978.123, ra=0.487263... deg, dec=1.777316... deg>
+  <SkyCoord (FK4): equinox=B1960.000, obstime=J1978.123, ra=0.48726331438 deg, dec=1.77731617297 deg>
 
 .. _astropy-skycoord-representations:
 
@@ -460,23 +469,23 @@ supplying the corresponding components for that representation::
 
     >>> c = SkyCoord(x=1, y=2, z=3, unit='kpc', representation='cartesian')
     >>> c
-    <SkyCoord (NoFrame): x=1.0 kpc, y=2.0 kpc, z=3.0 kpc>
+    <SkyCoord (ICRS): x=1.0 kpc, y=2.0 kpc, z=3.0 kpc>
     >>> c.x, c.y, c.z
     (<Quantity 1.0 kpc>, <Quantity 2.0 kpc>, <Quantity 3.0 kpc>)
 
 Other variations include::
 
     >>> SkyCoord(1, 2*u.deg, 3, representation='cylindrical')
-    <SkyCoord (NoFrame): rho=1.0 , phi=2.0 deg, z=3.0 >
+    <SkyCoord (ICRS): rho=1.0 , phi=2.0 deg, z=3.0 >
 
     >>> SkyCoord(rho=1*u.km, phi=2*u.deg, z=3*u.m, representation='cylindrical')
-    <SkyCoord (NoFrame): rho=1.0 km, phi=2.0 deg, z=3.0 m>
+    <SkyCoord (ICRS): rho=1.0 km, phi=2.0 deg, z=3.0 m>
 
     >>> SkyCoord(rho=1, phi=2, z=3, unit=(u.km, u.deg, u.m), representation='cylindrical')
-    <SkyCoord (NoFrame): rho=1.0 km, phi=2.0 deg, z=3.0 m>
+    <SkyCoord (ICRS): rho=1.0 km, phi=2.0 deg, z=3.0 m>
 
     >>> SkyCoord(1, 2, 3, unit=(None, u.deg, None), representation='cylindrical')
-    <SkyCoord (NoFrame): rho=1.0 , phi=2.0 deg, z=3.0 >
+    <SkyCoord (ICRS): rho=1.0 , phi=2.0 deg, z=3.0 >
 
 In general terms, the allowed syntax is as follows::
 
@@ -588,17 +597,17 @@ This is a bit messy but it shows that for each representation there is a
   means to not force a particular unit.
 
 For a particular coordinate instance you can use the ``representation``
-attribute in conjunction with the ``representation_names`` attribute to figure
-out what keywords are accepted by a particular class object.  The former will
-be the representation class the system is expressed in (e.g., spherical for
-equatorial frames), and the latter will be a dictionary mapping names for that
-frame to the component name on the representation class::
+attribute in conjunction with the ``representation_component_names`` attribute
+to figure out what keywords are accepted by a particular class object.  The
+former will be the representation class the system is expressed in (e.g.,
+spherical for equatorial frames), and the latter will be a dictionary mapping
+names for that frame to the component name on the representation class::
 
     >>> import astropy.units as u
     >>> icrs = ICRS(1*u.deg, 2*u.deg)
     >>> icrs.representation
     <class 'astropy.coordinates.representation.SphericalRepresentation'>
-    >>> icrs.representation_names
+    >>> icrs.representation_component_names
     OrderedDict([(u'ra', u'lon'), (u'dec', u'lat'), (u'distance', u'distance')])
 
 Changing representation
@@ -620,24 +629,24 @@ in 3d space.
 
     >>> c = SkyCoord(x=1, y=2, z=3, unit='kpc', representation='cartesian')
     >>> c
-    <SkyCoord (NoFrame): x=1.0 kpc, y=2.0 kpc, z=3.0 kpc>
+    <SkyCoord (ICRS): x=1.0 kpc, y=2.0 kpc, z=3.0 kpc>
 
     >>> c.representation = 'cylindrical'
-    >>> c
-    <SkyCoord (NoFrame): rho=2.236067... kpc, phi=63.434948... deg, z=3.0 kpc>
-    >>> c.phi
-    <Angle 63.434948... deg>
+    >>> c  # doctest: +FLOAT_CMP
+    <SkyCoord (ICRS): rho=2.2360679775 kpc, phi=63.4349488229 deg, z=3.0 kpc>
+    >>> c.phi.to(u.deg)  # doctest: +FLOAT_CMP
+    <Angle 63.43494882292201 deg>
     >>> c.x  # doctest: +SKIP
     ...
     AttributeError: 'SkyCoord' object has no attribute 'x'
 
     >>> c.representation = 'spherical'
-    >>> c
-    <SkyCoord (NoFrame): ra=63.434948... deg, dec=53.300774... deg, distance=3.741657... kpc>
+    >>> c  # doctest: +FLOAT_CMP
+    <SkyCoord (ICRS): ra=63.4349488229 deg, dec=53.3007747995 deg, distance=3.74165738677 kpc>
 
     >>> c.representation = 'unitspherical'
-    >>> c
-    <SkyCoord (NoFrame): ra=63.434948... deg, dec=53.300774... deg>
+    >>> c  # doctest: +FLOAT_CMP
+    <SkyCoord (ICRS): ra=63.4349488229 deg, dec=53.3007747995 deg>
 
 You can also use any representation class to set the representation::
 
@@ -645,7 +654,7 @@ You can also use any representation class to set the representation::
     >>> c.representation = CartesianRepresentation
 
 Note that if all you want is a particular representation without changing the
-state of the |SkyCoord| object, you should instead use the 
+state of the |SkyCoord| object, you should instead use the
 ``astropy.coordinates.SkyCoord.represent_as()`` method::
 
     >>> c.representation = 'spherical'

@@ -13,6 +13,12 @@ The `~astropy.coordinates` package provides classes for representing a
 variety of celestial/spatial  coordinates, as well as tools for
 converting between common coordinate systems in a uniform way.
 
+.. note::
+
+    If you have existing code that uses `~astropy.coordinates` functionality from
+    Astropy version 0.3.x or earlier, please see the section on `Migrating from
+    pre-v0.4 coordinates`_.  The interface has changed in ways that are not
+    backward compatible in many circumstances.
 
 Getting Started
 ===============
@@ -50,18 +56,18 @@ objects, which are specialized versions of the general
 using aptly named attributes::
 
     >>> c = SkyCoord(ra=10.68458*u.degree, dec=41.26917*u.degree)
-    >>> c.ra
-    <Longitude 10.6845... deg>
-    >>> c.ra.hour
-    0.712305333...
-    >>> c.ra.hms
-    hms_tuple(h=0.0, m=42.0, s=44.299...)
-    >>> c.dec
-    <Latitude 41.2691... deg>
-    >>> c.dec.degree
-    41.2691...
-    >>> c.dec.radian
-    0.72028289606...
+    >>> c.ra  # doctest: +FLOAT_CMP
+    <Longitude 10.68458 deg>
+    >>> c.ra.hour  # doctest: +FLOAT_CMP
+    0.7123053333333335
+    >>> c.ra.hms  # doctest: +FLOAT_CMP
+    hms_tuple(h=0.0, m=42.0, s=44.299200000000525)
+    >>> c.dec  # doctest: +FLOAT_CMP
+    <Latitude 41.26917 deg>
+    >>> c.dec.degree  # doctest: +FLOAT_CMP
+    41.26917
+    >>> c.dec.radian  # doctest: +FLOAT_CMP
+    0.7202828960652683
 
 Coordinates can easily be converted to strings using the
 :meth:`~astropy.coordinates.SkyCoord.to_string` method::
@@ -102,13 +108,13 @@ more control, you can use the `~astropy.coordinates.SkyCoord.transform_to` metho
 which accepts a frame name, frame class, or frame instance::
 
     >>> from astropy.coordinates import FK5
-    >>> c_icrs.galactic
-    <SkyCoord (Galactic): l=121.17430... deg, b=-21.572... deg>
+    >>> c_icrs.galactic  # doctest: +FLOAT_CMP
+    <SkyCoord (Galactic): l=121.174302631 deg, b=-21.5728000618 deg>
     >>> c_fk5 = c_icrs.transform_to('fk5')  # c_icrs.fk5 does the same thing
-    >>> c_fk5
-    <SkyCoord (FK5): equinox=J2000.000, ra=10.68459... deg, dec=41.269... deg>
-    >>> c_fk5.transform_to(FK5(equinox='J1975'))  # precess to a different equinox
-    <SkyCoord (FK5): equinox=J1975.000, ra=10.34209... deg, dec=41.132... deg>
+    >>> c_fk5  # doctest: +FLOAT_CMP
+    <SkyCoord (FK5): equinox=J2000.000, ra=10.6845915393 deg, dec=41.2691714591 deg>
+    >>> c_fk5.transform_to(FK5(equinox='J1975'))  # precess to a different equinox  # doctest: +FLOAT_CMP
+    <SkyCoord (FK5): equinox=J1975.000, ra=10.3420913461 deg, dec=41.1323211229 deg>
 
 |skycoord| and all other `~astropy.coordinates` objects also support
 array coordinates.  These work the same as single-value coordinates, but
@@ -118,8 +124,10 @@ catalog), this is a better choice than a list of |skycoord| objects,
 because it will be *much* faster than applying the operation to each
 |skycoord| in a for loop.
 
+::
+
     >>> SkyCoord(ra=[10, 11]*u.degree, dec=[41, -5]*u.degree)
-    <SkyCoord (NoFrame): (ra, dec) in deg
+    <SkyCoord (ICRS): (ra, dec) in deg
         [(10.0, 41.0), (11.0, -5.0)]>
 
 So far we have been using a spherical coordinate representation in the all the
@@ -136,18 +144,20 @@ coordinate objects::
     (<Quantity 1.0 kpc>, <Quantity 2.0 kpc>, <Quantity 3.0 kpc>)
 
     >>> c.representation = 'cylindrical'
-    >>> c
-    <SkyCoord (ICRS): rho=2.236067... kpc, phi=63.434948... deg, z=3.0 kpc>
+    >>> c  # doctest: +FLOAT_CMP
+    <SkyCoord (ICRS): rho=2.2360679775 kpc, phi=63.4349488229 deg, z=3.0 kpc>
     >>> c.phi
-    <Angle 63.43494882292201 deg>
+    <Angle 63.434948... deg>
+    >>> c.phi.to(u.radian)
+    <Angle 1.107148... rad>
 
     >>> c.representation = 'spherical'
-    >>> c
-    <SkyCoord (ICRS): ra=63.434948... deg, dec=53.300774... deg, distance=3.741657... kpc>
+    >>> c  # doctest: +FLOAT_CMP
+    <SkyCoord (ICRS): ra=63.4349488229 deg, dec=53.3007747995 deg, distance=3.74165738677 kpc>
 
     >>> c.representation = 'unitspherical'
-    >>> c
-    <SkyCoord (ICRS): ra=63.434948... deg, dec=53.300774... deg>
+    >>> c  # doctest: +FLOAT_CMP
+    <SkyCoord (ICRS): ra=63.4349488229 deg, dec=53.3007747995 deg>
 
 |skycoord| defines a number of convenience methods as well, like on-sky
 separation between two coordinates and catalog matching (detailed in
@@ -155,8 +165,8 @@ separation between two coordinates and catalog matching (detailed in
 
     >>> c1 = SkyCoord(ra=10*u.degree, dec=9*u.degree, frame='icrs')
     >>> c2 = SkyCoord(ra=11*u.degree, dec=10*u.degree, frame='fk5')
-    >>> c1.separation(c2)  # Differing frames handled correctly
-    <Angle 1.40453358... deg>
+    >>> c1.separation(c2)  # Differing frames handled correctly  # doctest: +FLOAT_CMP
+    <Angle 1.4045335865905868 deg>
 
 
 Distance from the origin (which is system-dependent, but often the Earth
@@ -166,20 +176,20 @@ conversion to the Cartesian representation of this location::
 
     >>> from astropy.coordinates import Distance
     >>> c = SkyCoord(ra=10.68458*u.degree, dec=41.26917*u.degree, distance=770*u.kpc)
-    >>> c.cartesian.x
-    <Quantity 568.712865423... kpc>
-    >>> c.cartesian.y
-    <Quantity 107.300897404... kpc>
-    >>> c.cartesian.z
-    <Quantity 507.889942918... kpc>
+    >>> c.cartesian.x  # doctest: +FLOAT_CMP
+    <Quantity 568.7128654235232 kpc>
+    >>> c.cartesian.y  # doctest: +FLOAT_CMP
+    <Quantity 107.3008974042025 kpc>
+    >>> c.cartesian.z  # doctest: +FLOAT_CMP
+    <Quantity 507.88994291875713 kpc>
 
 With distances assigned, |skycoord| convenience methods are more powerful, as
 they can make use of the 3D information. For example::
 
     >>> c1 = SkyCoord(ra=10*u.degree, dec=9*u.degree, distance=10*u.pc, frame='icrs')
     >>> c2 = SkyCoord(ra=11*u.degree, dec=10*u.degree, distance=11.5*u.pc, frame='icrs')
-    >>> c1.separation_3d(c2)
-    <Distance 1.522860241... pc>
+    >>> c1.separation_3d(c2)  # doctest: +FLOAT_CMP
+    <Distance 1.5228602415117989 pc>
 
 
 Finally, the `astropy.coordinates` subpackage also provides a quick way to get
@@ -188,8 +198,8 @@ connection. The `~astropy.coordinates.SkyCoord.from_name` method of |skycoord|
 uses `Sesame <http://cds.u-strasbg.fr/cgi-bin/Sesame>`_ to retrieve coordinates
 for a particular named object::
 
-    >>> SkyCoord.from_name("M42")  # doctest: +REMOTE_DATA
-    <SkyCoord (ICRS): ra=83.8220... deg, dec=-5.391... deg>
+    >>> SkyCoord.from_name("M42")  # doctest: +REMOTE_DATA +FLOAT_CMP
+    <SkyCoord (ICRS): ra=83.82208 deg, dec=-5.39111 deg>
 
 .. note::
 
@@ -267,6 +277,57 @@ IPython session::
 
     In [1]: from astropy.coordinates.tests import test_api_ape5
     In [2]: test_api_ape5??
+
+
+Migrating from pre-v0.4 coordinates
+===================================
+
+For typical users, the major change is that the recommended way to use
+coordinate functionality is via the `~astropy.coordinates.SkyCoord` class,
+instead of classes like `~astropy.coordinates.ICRS` classes (now called
+"frame classes").
+
+For most users of pre-v0.4 coordinates, this means that the best way to
+adapt old code to the new framework is to change code like::
+
+    >>> from astropy import units as u
+    >>> from astropy.coordinates import ICRS  # or FK5, or Galactic, or similar
+    >>> coordinate = ICRS(123.4*u.deg, 56.7*u.deg)
+
+to instead be::
+
+    >>> from astropy import units as u
+    >>> from astropy.coordinates import SkyCoord
+    >>> coordinate = SkyCoord(123.4*u.deg, 56.7*u.deg, frame='icrs')
+
+Note that usage like::
+
+    >>> coordinate = ICRS(123.4, 56.7, unit=('deg', 'deg'))  # NOT RECOMMENDED!
+
+will continue to work in v0.4, but will yield a `~astropy.coordinates.SkyCoord`
+instead of an `~astropy.coordinates.ICRS` object (the former behaves
+more like the pre-v0.4 `~astropy.coordinates.ICRS`).  This compatibility
+feature will issue a deprecation warning, and will be removed in the next major
+version, so you should update your code to use `~astropy.coordinates.SkyCoord`
+directly by the next release.
+
+Users should also be aware that if they continue to use the first form (directly
+creating `~astropy.coordinates.ICRS` frame objects), old code may still
+work if it uses basic coordinate functionality, but many of the
+convenience functions like catalog matching or attribute-based
+transforms like ``coordinate.galactic`` will no longer work.  These
+features are now all in `~astropy.coordinates.SkyCoord`.
+
+For advanced users or developers who have defined their own coordinates,
+take note that the extensive internal changes will require re-writing
+user-defined coordinate frames.  The :ref:`sgr-example` document has
+been updated for the new framework to provide a worked example of how
+custom coordinates work.
+
+More detailed information about the new framework and using it to define
+custom coordinates is available at :ref:`astropy-coordinates-overview`,
+:ref:`astropy-coordinates-definitions`, :ref:`astropy-coordinates-design`,
+and :ref:`astropy-coordinates-create-repr`.
 
 
 See Also

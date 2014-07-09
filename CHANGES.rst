@@ -4,8 +4,6 @@
 New Features
 ^^^^^^^^^^^^
 
-- ``astropy.config``
-
 - ``astropy.constants``
 
   - Added ``b_wien`` to represent Wien wavelength displacement law constant.
@@ -92,6 +90,8 @@ New Features
 
   - Provide a mechanism to select how masked values are printed. [#2424]
 
+  - Added support for reading multi-aperture daophot file. [#2656]
+
 - ``astropy.io.fits``
 
   - Included a new command-line script called ``fitsheader`` to display the
@@ -102,17 +102,16 @@ New Features
     ``silentfix+exception`` which give more control over how to report fixable
     errors as opposed to unfixable errors.
 
-- ``astropy.io.misc``
-
-- ``astropy.io.registry``
-
-- ``astropy.io.votable``
-
 - ``astropy.modeling``
 
   - Prototype implementation of fitters that treat optimization algorithms
     separately from fit statistics, allowing new fitters to be created by
     mixing and matching optimizers and statistic functions. [#1914]
+
+  - Slight overhaul to how inputs to and outputs from models are handled with
+    respect to array-valued parameters and variables, as well as sets of
+    multiple models.  See the associated PR and the modeling section of the
+    v0.4 documentation for more details. [#2634]
 
   - Added a new ``SimplexLSQFitter`` which uses a downhill simplex optimizer
     with a least squares statistic. [#1914]
@@ -143,7 +142,12 @@ New Features
 
   - Added flat prior to binom_conf_interval and binned_binom_proportion
 
+  - Change default in ``sigma_clip`` from ``np.median`` to ``np.ma.median``.
+    [#2582]
+
 - ``astropy.sphinx``
+
+  - Note, the following new features are included in astropy-helpers as well:
 
   - The ``automodapi`` and ``automodsumm`` extensions now include sphinx
     configuration options to write out what ``automodapi`` and ``automodsumm``
@@ -162,6 +166,11 @@ New Features
 
 - ``astropy.table``
 
+  - Improved grouped table aggregation by using the numpy ``reduceat()`` method
+    when possible. This can speed up the operation by a factor of at least 10
+    to 100 for large unmasked tables and columns with relatively small
+    group sizes.  [#2625]
+
   - Allow row-oriented data input using a new ``rows`` keyword argument.
     [#850]
 
@@ -174,6 +183,9 @@ New Features
   - Remove transition code related to the order change in ``Column`` and
     ``MaskedColumn`` arguments ``name`` and ``data`` from Astropy 0.2
     to 0.3. [#2511]
+
+  - Change HTML table representation in IPython notebook to show all
+    table columns instead of restricting to 80 column width.  [#2651]
 
 - ``astropy.time``
 
@@ -205,6 +217,9 @@ New Features
 
   - Added ``temperature()`` equivalencies to support conversion between
     Kelvin, Celsius, and Fahrenheit. [#2209]
+
+  - Added ``temperature_energy()`` equivalencies to support conversion
+    between electron-volt and Kelvin. [#2637]
 
   - The runtime of ``astropy.units.Unit.compose`` is greatly improved
     (by a factor of 2 in most cases) [#2544]
@@ -241,31 +256,32 @@ New Features
   - New ``astropy.wcs.utils`` module, with a handful of tools for manipulating
     WCS objects, including dropping, swapping, and adding axes.
 
+- Misc
+
+  - Includes the new astropy-helpers package which separates some of Astropy's
+    build, installation, and documentation infrastructure out into an
+    independent package, making it easier for Affiliated Packages to depend on
+    these features.  astropy-helpers replaces/deprecates some of the submodules
+    in the ``astropy`` package (see API Changes below).  See also
+    `APE 4 <https://github.com/astropy/astropy-APEs/blob/master/APE4.rst>`_
+    for more details on the motivation behind and implementation of
+    astropy-helpers.  [#1563]
+
 
 API Changes
 ^^^^^^^^^^^
 
 - ``astropy.config``
 
-  - The configuration system received a major overhaul, as part of
-    APE3.  It is no longer possible to save configuration items from
-    Python, but instead users must edit the configuration file
-    directly.  The locations of configuration items have moved, and
-    some have been changed to science state values.  The old locations
-    should continue to work until astropy 0.5, but deprecation
-    warnings will be displayed.  See :ref:`config-0-4-transition` for a
-    detailed description of the changes and how to update existing
+  - The configuration system received a major overhaul, as part of APE3.  It is
+    no longer possible to save configuration items from Python, but instead
+    users must edit the configuration file directly.  The locations of
+    configuration items have moved, and some have been changed to science state
+    values.  The old locations should continue to work until astropy 0.5, but
+    deprecation warnings will be displayed.  See the `Configuration transition
+    <http://astropy.readthedocs.org/en/v0.4/config/config_0_4_transition.html>`_
+    docs for a detailed description of the changes and how to update existing
     code. [#2094]
-
-- ``astropy.constants``
-
-- ``astropy.convolution``
-
-- ``astropy.coordinates``
-
-- ``astropy.cosmology``
-
-- ``astropy.io.ascii``
 
 - ``astropy.io.fits``
 
@@ -343,12 +359,6 @@ API Changes
     Astropy following the v0.4 release (they will still be available in any
     v0.4.x bugfix releases, however).
 
-- ``astropy.io.misc``
-
-- ``astropy.io.registry``
-
-- ``astropy.io.votable``
-
 - ``astropy.modeling``
 
   - The method computing the derivative of the model with respect
@@ -383,7 +393,13 @@ API Changes
     be set with any array-like object instead of requiring that they be set
     with a ``numpy.ndarray``. [#2419]
 
-- ``astropy.stats``
+- ``astropy.sphinx``
+
+  - Use of the ``astropy.sphinx`` module is deprecated; all new development of
+    this module is in ``astropy_helpers.sphinx`` which should be used instead
+    (therefore documentation builds that made use of any of the utilities in
+    ``astropy.sphinx`` now have ``astropy_helpers`` as a documentation
+    dependency).
 
 - ``astropy.table``
 
@@ -431,10 +447,6 @@ API Changes
     `~astropy.table.Table` column and have it correctly pick up the units
     from the column.  [#2486]
 
-- ``astropy.utils``
-
-- ``astropy.vo``
-
 - ``astropy.wcs``
 
   - ``calcFootprint`` was deprecated. It is replaced by
@@ -466,19 +478,22 @@ API Changes
     0.2, have been removed.  Use the shape of the underlying FITS data
     array instead.  [#2386]
 
+- Misc
+
+  - The ``astropy.setup_helpers`` and ``astropy.version_helpers`` modules are
+    deprecated; any non-critical fixes and development to those modules should
+    be in ``astropy_helpers`` instead.  Packages that use these modules in
+    their ``setup.py`` should depend on ``astropy_helpers`` following the same
+    pattern as in the Astropy package template.
+
+
 Bug Fixes
 ^^^^^^^^^
-
-- ``astropy.config``
 
 - ``astropy.constants``
 
   - ``astropy.constants.Contant`` objects can now be deep
     copied. [#2601]
-
-- ``astropy.convolution``
-
-- ``astropy.coordinates``
 
 - ``astropy.cosmology``
 
@@ -490,6 +505,9 @@ Bug Fixes
 
 - ``astropy.io.ascii``
 
+  - ``astropy.io.ascii.read`` would fail to read lists of strings where some of
+    the strings consisted of just a newline ("\n"). [#2648]
+
 - ``astropy.io.fits``
 
   - Use NaN for missing values in FITS when using Table.write for float
@@ -500,10 +518,6 @@ Bug Fixes
 
   - Additional minor bug fixes ported from PyFITS.  [#2575]
 
-- ``astropy.io.misc``
-
-- ``astropy.io.registry``
-
 - ``astropy.io.votable``
 
   - It is now possible to save an ``astropy.table.Table`` object as a
@@ -512,8 +526,6 @@ Bug Fixes
     kwarg. [#2138]
 
   - Fixed a crash writing out variable length arrays. [#2577]
-
-- ``astropy.modeling``
 
 - ``astropy.nddata``
 
@@ -553,8 +565,6 @@ Bug Fixes
 
   - Fix crash in smart resolver when the resolution doesn't work. [#2591]
 
-- ``astropy.stats``
-
 - ``astropy.table``
 
   - The ``astropy.table.Column`` object can now use both functions and callable
@@ -562,6 +572,8 @@ Bug Fixes
 
   - Fixed a problem on 64 bit windows that caused errors
     "expected 'DTYPE_t' but got 'long long'" [#2490]
+
+  - Fix initialisation of ``TableColumns`` with lists or tuples.  [#2647]
 
 - ``astropy.time``
 
@@ -576,10 +588,6 @@ Bug Fixes
   - Composing base units into identical composite units now works. [#2382]
 
   - Creating and composing/decomposing units is now substantially faster [#2544]
-
-- ``astropy.utils``
-
-- ``astropy.vo``
 
 - ``astropy.wcs``
 
@@ -627,6 +635,10 @@ Bug Fixes
     ``wscslib`` already present in the system, the package does not try
     to install ``wcslib`` headers under ``astropy/wcs/include``. [#2536]
 
+  - Fixes an unresolved external symbol error in the
+    `astropy.wcs._wcs` C extension on Microsoft Windows when built
+    with a Microsoft compiler. [#2478]
+
 - Misc
 
   - Running the test suite with ``python setup.py test`` now works if
@@ -660,6 +672,14 @@ Other Changes and Additions
 - Where appropriate, tests are now run both with and without the
   ``unicode_literals`` option to ensure that we support both cases. [#1962]
 
+- Running the Astropy test suite from within the IPython REPL is disabled for
+  now due to bad interaction between the test runner and IPython's logging
+  and I/O handler.  For now, run the Astropy tests should be run in the basic
+  Python interpreter. [#2684]
+
+- Added support for numerical comparison of floating point values appearing in
+  the output of doctests using a ``+FLOAT_CMP`` doctest flag. [#2087]
+
 - A monkey patch is performed to fix a bug in Numpy version 1.7 and
   earlier where unicode fill values on masked arrays are not
   supported.  This may cause unintended side effects if your
@@ -679,6 +699,7 @@ Other Changes and Additions
   ``nitpick`` Sphinx option is now used to avoid broken links in future.
   [#1221, #2019, #2109, #2161, #2162, #2192, #2200, #2296, #2448, #2456,
   #2460, #2467, #2476, #2508, #2509]
+
 
 0.3.2 (2014-05-13)
 ------------------
@@ -704,6 +725,9 @@ Bug Fixes
 
   - Mixing strings and quantities in the ``Angle`` constructor now
     works.  For example: ``Angle(['1d', 1. * u.d])``.  [#2398]
+
+  - If ``Longitude`` is given a ``Longitude`` as input, use its ``wrap_angle``
+    by default [#2705]
 
 - ``astropy.cosmology``
 

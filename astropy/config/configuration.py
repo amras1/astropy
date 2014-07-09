@@ -174,7 +174,7 @@ class ConfigItem(object):
 
         class _Conf(config.ConfigNamespace):
             unicode_output = config.ConfigItem(
-                'unicode_output', False,
+                False,
                 'Use Unicode characters when outputting values, and writing widgets '
                 'to the console.')
         conf = _Conf()
@@ -813,7 +813,7 @@ def update_default_config(pkg, default_cfg_dir_or_fn, version=None):
 
     if path.exists(cfgfn):
         doupdate = is_unedited_config_file(cfgfn)
-    else:
+    elif path.exists(path.dirname(cfgfn)):
         doupdate = True
 
     if version is None:

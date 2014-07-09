@@ -75,20 +75,20 @@ def test_round_tripping(frame0, frame1, equinox0, equinox1, obstime0, obstime1):
 
     # Keep only frame attributes for frame1
     attrs1 = dict((attr, val) for attr, val in attrs1.items()
-                  if attr in frame1.frame_attr_names)
+                  if attr in frame1.get_frame_attr_names())
     sc2 = sc.transform_to(frame1(**attrs1))
 
     # When coming back only keep frame0 attributes for transform_to
     attrs0 = dict((attr, val) for attr, val in attrs0.items()
-                  if attr in frame0.frame_attr_names)
+                  if attr in frame0.get_frame_attr_names())
     # also, if any are None, fill in with defaults
-    for attrnm in frame0.frame_attr_names:
+    for attrnm in frame0.get_frame_attr_names():
         if attrs0.get(attrnm, None) is None:
-            if attrnm == 'obstime' and frame0.frame_attr_names[attrnm] is None:
+            if attrnm == 'obstime' and frame0.get_frame_attr_names()[attrnm] is None:
                 if 'equinox' in attrs0:
                     attrs0[attrnm] = attrs0['equinox']
             else:
-                attrs0[attrnm] = frame0.frame_attr_names[attrnm]
+                attrs0[attrnm] = frame0.get_frame_attr_names()[attrnm]
     sc_rt = sc2.transform_to(frame0(**attrs0))
 
     if frame0 is Galactic:
@@ -408,8 +408,8 @@ def test_repr():
     assert repr(sc3) == ('<SkyCoord (ICRS): (ra, dec) in deg\n'
                          '    [(0.25, 1.0), (0.25, 2.5)]>')
 
-    sc_noframe = SkyCoord(0 * u.deg, 1 * u.deg)
-    assert repr(sc_noframe) == '<SkyCoord (NoFrame): ra=0.0 deg, dec=1.0 deg>'
+    sc_default = SkyCoord(0 * u.deg, 1 * u.deg)
+    assert repr(sc_default) == '<SkyCoord (ICRS): ra=0.0 deg, dec=1.0 deg>'
 
 
 def test_ops():
@@ -441,20 +441,21 @@ def test_ops():
 
 def test_none_transform():
     """
-    Ensure that transforming from a SkyCoord with no frame provided always fails
+    Ensure that transforming from a SkyCoord with no frame provided works like
+    ICRS
     """
     sc = SkyCoord(0 * u.deg, 1 * u.deg)
     sc_arr = SkyCoord(0 * u.deg, [1, 2] * u.deg)
 
-    with pytest.raises(ValueError):
-        sc.transform_to(ICRS)
-    with pytest.raises(ValueError):
-        sc.transform_to('fk5')
+    sc2 = sc.transform_to(ICRS)
+    assert sc.ra == sc2.ra and sc.dec == sc2.dec
 
-    with pytest.raises(ValueError):
-        sc_arr.transform_to(ICRS)
-    with pytest.raises(ValueError):
-        sc_arr.transform_to('fk5')
+    sc5 = sc.transform_to('fk5')
+    assert sc5.ra == sc2.transform_to('fk5').ra
+
+    sc_arr2 = sc_arr.transform_to(ICRS)
+    sc_arr5 = sc_arr.transform_to('fk5')
+    npt.assert_array_equal(sc_arr5.ra, sc_arr2.transform_to('fk5').ra)
 
 
 def test_position_angle():
