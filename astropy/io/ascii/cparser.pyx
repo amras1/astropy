@@ -30,12 +30,12 @@ cdef extern from "src/tokenizer.h":
         OVERFLOW_ERROR
 
     ctypedef struct tokenizer_t:
-        char *source           # single string containing all of the input
+        char *source           # single unicode string containing all of the input
         int source_len         # length of the input
-        int source_pos         # current index in source for tokenization
-        char delimiter         # delimiter character
-        char comment           # comment character
-        char quotechar         # quote character
+        char *source_pos       # current position in source for tokenization
+        uint32_t delimiter     # delimiter character
+        uint32_t comment       # comment character
+        uint32_t quotechar     # quote character
         char *header_output    # string containing header data
         char **output_cols     # array of output strings for each column
         char **col_ptrs        # array of pointers to current output position for each col
@@ -56,7 +56,7 @@ cdef extern from "src/tokenizer.h":
         # source: "A,B,C\n10,5.,6\n1,2,3"
         # output_cols: ["A\x0010\x001", "B\x005.\x002", "C\x006\x003"]
 
-    tokenizer_t *create_tokenizer(char delimiter, char comment, char quotechar,
+    tokenizer_t *create_tokenizer(uint32_t delimiter, uint32_t comment, uint32_t quotechar,
                                   int fill_extra_cols, int strip_whitespace_lines,
                                   int strip_whitespace_fields)
     void delete_tokenizer(tokenizer_t *tokenizer)
