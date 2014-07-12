@@ -93,7 +93,7 @@ class FastBasic(object):
             try_string = {}
 
         data = self.engine.read(try_int, try_float, try_string)
-        return Table(data, names=list(self.engine.names))
+        return data
 
     def write(self, table, output):
         """

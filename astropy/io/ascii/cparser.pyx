@@ -10,6 +10,7 @@ from . import core
 from distutils import version
 import csv
 import os
+from libc.stdint cimport uint32_t
 
 cdef extern from "src/tokenizer.h":
     ctypedef enum tokenizer_state:
@@ -173,6 +174,9 @@ cdef class CParser:
             except TypeError:
                 raise TypeError('Input "table" must be a file-like object, a '
                                 'string (filename or data), or an iterable')
+
+        if six.PY2:
+            source = source.decode('UTF-8')
         # Create a reference to the Python object so its char * pointer remains valid
         source_str = source + '\n' # add newline to simplify handling last line of data
         self.source = source_str.encode('UTF-8') # encode in UTF-8 for char * handling
@@ -408,7 +412,7 @@ cdef class CParser:
             row += 1
 
         # convert to string with smallest length possible
-        col = col.astype('|S{0}'.format(max_len))
+        col = col.astype('U{0}'.format(max_len))
         if mask:
             return ma.masked_array(col, mask=[1 if i in mask else 0 for i in
                                               range(row)])

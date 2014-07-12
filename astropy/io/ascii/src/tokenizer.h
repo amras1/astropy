@@ -79,6 +79,7 @@ double str_to_double(tokenizer_t *self, char *str);
 void start_iteration(tokenizer_t *self, int col);
 int finished_iteration(tokenizer_t *self);
 char *next_field(tokenizer_t *self);
+uint32_t get_char(tokenizer_t *self, char *buf);
 uint32_t next_char(tokenizer_t *self);
 
 #endif
