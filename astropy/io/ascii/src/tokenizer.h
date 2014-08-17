@@ -41,9 +41,10 @@ typedef struct
     char delimiter;        // delimiter character
     char comment;          // comment character
     char quotechar;        // quote character
-    char **output_cols;    // array of output strings for each column
-    char **col_ptrs;       // array of pointers to current output position for each col
-    int *output_len;       // length of each output column string
+    char *output;          // single null-delimited string containing output
+    char **line_ptrs;      // array of pointers to the beginning of each line
+    int output_pos;        // current index in output
+    int line_ptrs_len;     // length of line_ptrs in memory
     int num_cols;          // number of table columns
     int num_rows;          // number of table rows
     int fill_extra_cols;   // represents whether or not to fill rows with too few values
@@ -62,10 +63,11 @@ Example input/output
 --------------------
 
 source: "A,B,C\n10,5.,6\n1,2,3"
-output_cols: ["A\x0010\x001", "B\x005.\x002", "C\x006\x003"]
+output: "A\x00B\x00C\x0010\x005.\x006\x001\x002\x003"
+line_ptrs: [output, output + 5, output + 13]
 */
 
-#define INITIAL_COL_SIZE 500
+#define INITIAL_NUM_LINES 50
 
 tokenizer_t *create_tokenizer(char delimiter, char comment, char quotechar, int fill_extra_cols,
                               int strip_whitespace_lines, int strip_whitespace_fields,
@@ -79,10 +81,9 @@ long str_to_long(tokenizer_t *self, char *str);
 double str_to_double(tokenizer_t *self, char *str);
 double xstrtod(const char *str, char **endptr, char decimal,
                char sci, char tsep, int skip_trailing);
-void start_iteration(tokenizer_t *self, int col);
-int finished_iteration(tokenizer_t *self);
-char *next_field(tokenizer_t *self, int *size);
-long file_len(FILE *fhandle);
+char *get_field(tokenizer_t *self, int row);
+void advance_line_ptrs(tokenizer_t *self);
+void rewind_line_ptrs(tokenizer_t *self);
 char *get_line(char *ptr, int *len, int map_len);
 
 #endif

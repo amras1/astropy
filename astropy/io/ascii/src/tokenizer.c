@@ -16,9 +16,10 @@ tokenizer_t *create_tokenizer(char delimiter, char comment, char quotechar,
     tokenizer->delimiter = delimiter;
     tokenizer->comment = comment;
     tokenizer->quotechar = quotechar;
-    tokenizer->output_cols = NULL;
-    tokenizer->col_ptrs = NULL;
-    tokenizer->output_len = NULL;
+    tokenizer->output = 0;
+    tokenizer->line_ptrs = 0;
+    tokenizer->output_pos = 0;
+    tokenizer->line_ptrs_len = 0;
     tokenizer->num_cols = 0;
     tokenizer->num_rows = 0;
     tokenizer->fill_extra_cols = fill_extra_cols;
@@ -41,20 +42,14 @@ void delete_data(tokenizer_t *tokenizer)
 {
     // Don't free tokenizer->source because it points to part of
     // an already freed Python object
-    int i;
 
-    if (tokenizer->output_cols)
-	for (i = 0; i < tokenizer->num_cols; ++i)
-	    free(tokenizer->output_cols[i]);
+    free(tokenizer->line_ptrs);
+    free(tokenizer->output);
 
-    free(tokenizer->output_cols);
-    free(tokenizer->col_ptrs);
-    free(tokenizer->output_len);
-
+    // TODO: check whether rereading makes sense
     // Set pointers to 0 so we don't use freed memory when reading over again
-    tokenizer->output_cols = 0;
-    tokenizer->col_ptrs = 0;
-    tokenizer->output_len = 0;
+    tokenizer->line_ptrs = 0;
+    tokenizer->output = 0;
 }
 
 void delete_tokenizer(tokenizer_t *tokenizer)
@@ -64,42 +59,8 @@ void delete_tokenizer(tokenizer_t *tokenizer)
     free(tokenizer);
 }
 
-void resize_col(tokenizer_t *self, int index)
-{
-    // Temporarily store the position in output_cols[index] to
-    // which col_ptrs[index] points
-    int diff = self->col_ptrs[index] - self->output_cols[index];
-
-    // Double the size of the column string
-    self->output_cols[index] = (char *) realloc(self->output_cols[index], 2 *
-                                                self->output_len[index] * sizeof(char));
-
-    // Set the second (newly allocated) half of the column string to all zeros
-    memset(self->output_cols[index] + self->output_len[index] * sizeof(char), 0,
-           self->output_len[index] * sizeof(char));
-
-    self->output_len[index] *= 2;
-    // realloc() might move the address in memory, so we have to move
-    // col_ptrs[index] to an offset of the new address
-    self->col_ptrs[index] = self->output_cols[index] + diff;
-}
-
-/*
-  Resize the column string if necessary and then append c to the
-  end of the column string, incrementing the column position pointer.
-*/
-
-static inline void push(tokenizer_t *self, char c, int col)
-{
-    if (self->col_ptrs[col] - self->output_cols[col] >=
-        self->output_len[col])
-    {
-        resize_col(self, col);
-    }
-    *self->col_ptrs[col]++ = c;
-}
-
-#define PUSH(c) push(self, c, col)
+// Append c to the output string and increment self->output_pos
+#define PUSH(c) self->output[self->output_pos++] = c
 
 /* Set the state to START_FIELD and begin with the assumption that
    the field is entirely whitespace in order to handle the possibility
@@ -114,7 +75,7 @@ static inline void push(tokenizer_t *self, char c, int col)
 /*
   First, backtrack to eliminate trailing whitespace if strip_whitespace_fields
   is true. If the field is empty, push '\x01' as a marker.
-  Append a null byte to the end of the column string as a field delimiting marker.
+  Append a null byte to the end of the output string as a field delimiting marker.
   Increment the variable col if we are tokenizing data.
 */
 
@@ -122,19 +83,17 @@ static inline void end_field(tokenizer_t *self, int *col, int header)
 {
     if (self->strip_whitespace_fields)
     {
-        --self->col_ptrs[*col];
-        while (*self->col_ptrs[*col] == ' ' || *self->col_ptrs[*col] == '\t')
+        --self->output_pos;
+        while (self->output[self->output_pos] == ' ' ||
+               self->output[self->output_pos] == '\t')
         {
-            *self->col_ptrs[*col]-- = '\x00';
+            self->output[self->output_pos--] = '\x00';
         }
-        ++self->col_ptrs[*col];
+        ++self->output_pos;
     }
-    if (self->col_ptrs[*col] == self->output_cols[*col] ||
-        self->col_ptrs[*col][-1] == '\x00')
-    {
-        push(self, '\x01', *col);
-    }
-    push(self, '\x00', *col);
+    if (self->output_pos == 0 || self->output[self->output_pos - 1] == '\x00')
+        PUSH('\x01');
+    PUSH('\x00');
     if (!header)
         ++*col;
 }
@@ -158,29 +117,33 @@ static inline void end_field(tokenizer_t *self, int *col, int header)
 */
 
 static inline int end_line(tokenizer_t *self, int col, int header, int end,
-                    tokenizer_state *old_state)
+                           tokenizer_state *old_state)
 {
-    if (header)                                 
-    {                                           
-        ++self->source_pos;                     
-        RETURN(NO_ERROR);                       
-    }                                           
-    else if (self->fill_extra_cols)             
-	while (col < self->num_cols)            
-	{                                       
-            PUSH('\x01');                       
-	    END_FIELD();                        
-	}                                       
-    else if (col < self->num_cols)              
-	RETURN(NOT_ENOUGH_COLS);                
-    ++self->num_rows;                           
-    *old_state = START_LINE;                     
-    if (end != -1 && self->num_rows == end)     
-    {                                           
-        ++self->source_pos;                     
-        RETURN(NO_ERROR);                       
+    if (header)
+    {
+        ++self->source_pos;
+        RETURN(NO_ERROR);
     }
-    return -1;
+    else if (self->fill_extra_cols)
+	while (col < self->num_cols)
+	{
+            PUSH('\x01');
+            END_FIELD();
+        }
+    else if (col < self->num_cols)
+	RETURN(NOT_ENOUGH_COLS);
+    if (++self->num_rows == self->line_ptrs_len)
+    {
+        self->line_ptrs_len *= 2;
+        self->line_ptrs = realloc(self->line_ptrs, self->line_ptrs_len * sizeof(char *));
+    }
+    self->line_ptrs[self->num_rows] = self->output + self->output_pos;
+    *old_state = START_LINE;
+    if (end != -1 && self->num_rows == end)
+    {
+        ++self->source_pos;
+        RETURN(NO_ERROR);
+    }
 }
 
 #define END_LINE() if (end_line(self, col, header, end, &old_state) != -1) return self->code
@@ -244,9 +207,8 @@ int tokenize(tokenizer_t *self, int end, int header, int num_cols)
     int col = 0; // current column ignoring possibly excluded columns
     tokenizer_state old_state = START_LINE; // last state the tokenizer was in before CR mode
     int parse_newline = 0; // explicit flag to treat current char as a newline
-    int i = 0;
     int whitespace = 1;
-    delete_data(self); // clear old reading data
+    self->output_pos = 0;
     self->num_rows = 0;
 
     if (header)
@@ -255,19 +217,12 @@ int tokenize(tokenizer_t *self, int end, int header, int num_cols)
         self->num_cols = num_cols;
 
     // Allocate memory for structures used during tokenization
-    self->output_cols = (char **) malloc(self->num_cols * sizeof(char *));
-    self->col_ptrs = (char **) malloc(self->num_cols * sizeof(char *));
-    self->output_len = (int *) malloc(self->num_cols * sizeof(int));
-
-    for (i = 0; i < self->num_cols; ++i)
-    {
-        self->output_cols[i] = (char *) calloc(1, INITIAL_COL_SIZE *
-                                               sizeof(char));
-        // Make each col_ptrs pointer point to the beginning of the
-        // column string
-        self->col_ptrs[i] = self->output_cols[i];
-        self->output_len[i] = INITIAL_COL_SIZE;
-    }
+    if (!self->output)
+        self->output = (char *) malloc(self->source_len);
+    if (!self->line_ptrs)
+        self->line_ptrs = (char **) malloc(INITIAL_NUM_LINES * sizeof(char *));
+    self->line_ptrs[0] = self->output;
+    self->line_ptrs_len = INITIAL_NUM_LINES;
 
     if (end == 0)
         RETURN(NO_ERROR); // don't read if end == 0
@@ -525,7 +480,7 @@ long str_to_long(tokenizer_t *self, char *str)
     ret = strtol(str, &tmp, 0);
 
     if (tmp == str || *tmp != '\0')
- 	self->code = CONVERSION_ERROR;
+        self->code = CONVERSION_ERROR;
     else if (errno == ERANGE)
         self->code = OVERFLOW_ERROR;
 
@@ -766,46 +721,33 @@ double xstrtod(const char *str, char **endptr, char decimal,
     return number;
 }
 
-void start_iteration(tokenizer_t *self, int col)
+char *get_field(tokenizer_t *self, int row)
 {
-    // Begin looping over the column string with index col
-    self->iter_col = col;
-    // Start at the initial pointer position
-    self->curr_pos = self->output_cols[col];
-}
-
-int finished_iteration(tokenizer_t *self)
-{
-    // Iteration is finished if we've exceeded the length of the column string
-    // or the pointer is at an empty byte
-    return (self->curr_pos - self->output_cols[self->iter_col] >=
-            self->output_len[self->iter_col] * sizeof(char)
-	    || *self->curr_pos == '\x00');
-}
-
-char *next_field(tokenizer_t *self, int *size)
-{
-    char *tmp = self->curr_pos;
-
-    // pass through the entire field until reaching the delimiter
-    while (*self->curr_pos != '\x00')
-	++self->curr_pos;
-
-    ++self->curr_pos; // next field begins after the delimiter
-
-    if (*tmp == '\x01') // empty field; this is a hack
-    {
-        if (size)
-            *size = 0;
+    char *field_ptr = self->line_ptrs[row];
+    if (*field_ptr == '\x01') // empty field; this is a hack
         return self->buf;
-    }
+    return field_ptr;
+}
 
-    else
+void advance_line_ptrs(tokenizer_t *self)
+{
+    int row;
+    for (row = 0; row < self->num_rows; ++row)
     {
-        if (size)
-            *size = self->curr_pos - tmp - 1;
-        return tmp;
+        // pass through the entire field until reaching the delimiter
+        while (*self->line_ptrs[row] != '\x00')
+            ++self->line_ptrs[row];
+        ++self->line_ptrs[row]; // next field begins after the delimiter
     }
+}
+
+void rewind_line_ptrs(tokenizer_t *self)
+{
+    // remove last line pointer, add back first
+    int row;
+    for (row = 1; row < self->num_rows; ++row)
+        self->line_ptrs[row] = self->line_ptrs[row - 1];
+    self->line_ptrs[0] = self->output;
 }
 
 char *get_line(char *ptr, int *len, int map_len)

@@ -1,3 +1,4 @@
+# cython: profile=True
 # Licensed under a 3-clause BSD style license - see LICENSE.rst
 
 import csv
@@ -51,9 +52,10 @@ cdef extern from "src/tokenizer.h":
         char delimiter         # delimiter character
         char comment           # comment character
         char quotechar         # quote character
-        char **output_cols     # array of output strings for each column
-        char **col_ptrs        # array of pointers to current output position for each col
-        int *output_len        # length of each output column string
+        char *output           # single null-delimited string containing output
+        char **line_ptrs       # array of pointers to the beginning of each line
+        int output_pos         # current index in output
+        int line_ptrs_len      # length of line_ptrs in memory
         int num_cols           # number of table columns
         int num_rows           # number of table rows
         int fill_extra_cols    # represents whether or not to fill rows with too few values
@@ -68,7 +70,8 @@ cdef extern from "src/tokenizer.h":
         # Example input/output
         # --------------------
         # source: "A,B,C\n10,5.,6\n1,2,3"
-        # output_cols: ["A\x0010\x001", "B\x005.\x002", "C\x006\x003"]
+        # output: "A\x00B\x00C\x0010\x005.\x006\x001\x002\x003"
+        # line_ptrs: [output, output + 5, output + 13]
 
     ctypedef struct memory_map:
         char *ptr
@@ -85,9 +88,9 @@ cdef extern from "src/tokenizer.h":
     long str_to_long(tokenizer_t *self, char *str)
     double fast_str_to_double(tokenizer_t *self, char *str)
     double str_to_double(tokenizer_t *self, char *str)
-    void start_iteration(tokenizer_t *self, int col)
-    int finished_iteration(tokenizer_t *self)
-    char *next_field(tokenizer_t *self, int *size)
+    char *get_field(tokenizer_t *self, int row)
+    void advance_line_ptrs(tokenizer_t *self)
+    void rewind_line_ptrs(tokenizer_t *self)
     char *get_line(char *ptr, int *len, int map_len)
 
 cdef extern from "Python.h":
@@ -125,7 +128,7 @@ cdef class FileString:
         self.mmap = mmap.mmap(self.fhandle.fileno(), 0, prot=mmap.PROT_READ)
         cdef Py_ssize_t buf_len = len(self.mmap)
         if six.PY2:
-            PyObject_AsReadBuffer(self.mmap, &self.mmap_ptr, &buf_len)
+            PyObject_AsReadBuffer(self.mmap, <void **>&self.mmap_ptr, &buf_len)
         else:            
             PyObject_GetBuffer(self.mmap, &self.buf, PyBUF_SIMPLE)
             self.mmap_ptr = self.buf.buf
@@ -310,9 +313,8 @@ cdef class CParser:
                 self.raise_error("an error occurred while tokenizing the header line")
             self.names = []
             name = ''
-
-            for i in range(self.tokenizer.output_len[0]): # header is in first col string
-                c = self.tokenizer.output_cols[0][i] # next char in header string
+            for i in range(self.tokenizer.output_pos):
+                c = self.tokenizer.output[i] # next char in header string
                 if not c: # zero byte -- field terminator
                     if name:
                         # replace empty placeholder with ''
@@ -329,11 +331,11 @@ cdef class CParser:
             if tokenize(self.tokenizer, -1, 1, 0) != 0:
                 self.raise_error("an error occurred while tokenizing the first line of data")
             self.width = 0
-            for i in range(self.tokenizer.output_len[0]): # header is in first col string
+            for i in range(self.tokenizer.output_pos):
                 # zero byte -- field terminator
-                if not self.tokenizer.output_cols[0][i]:
+                if not self.tokenizer.output[i]:
                     # ends valid field
-                    if i > 0 and self.tokenizer.output_cols[0][i - 1]:
+                    if i > 0 and self.tokenizer.output[i - 1]:
                         self.width += 1
                     else: # end of line
                         break
@@ -527,6 +529,7 @@ cdef class CParser:
 
         for i, name in enumerate(self.names):
             if name not in self.use_cols:
+                advance_line_ptrs(t)
                 continue
             # Try int first, then float, then string
             try:
@@ -542,6 +545,7 @@ cdef class CParser:
                     if try_string and not try_string[name]:
                         raise ValueError('Column {0} failed to convert'.format(name))
                     cols[name] = self._convert_str(t, i, num_rows)
+            advance_line_ptrs(t) # move to the next field in each column
 
         return cols
 
@@ -551,21 +555,16 @@ cdef class CParser:
             num_rows = nrows
         # intialize ndarray
         cdef np.ndarray col = np.empty(num_rows, dtype=np.int_)
-        cdef np.ndarray str_col = np.empty(num_rows, dtype=object) 
         cdef long converted
-        cdef int row = 0
         cdef long *data = <long *> col.data # pointer to raw data
         cdef char *field
         cdef char *empty_field = t.buf # memory address of designated empty buffer
         cdef bytes new_value
         mask = set() # set of indices for masked values
-        start_iteration(t, i) # begin the iteration process in C
 
-        while not finished_iteration(t):
-            if row == num_rows: # end prematurely if we aren't using every row
-                break
+        for row in range(num_rows):
             # retrieve the next field as a C pointer
-            field = next_field(t, <int *>0)
+            field = get_field(t, row)
             replace_info = None
 
             if field == empty_field and self.fill_empty:
@@ -599,12 +598,11 @@ cdef class CParser:
                 raise ValueError()
             
             data[row] = converted
-            row += 1
 
         if mask:
             # convert to masked_array
             return ma.masked_array(col, mask=[1 if i in mask else 0 for i in
-                                              range(row)])
+                                              range(num_rows)])
         else:
             return col
 
@@ -616,7 +614,6 @@ cdef class CParser:
 
         cdef np.ndarray col = np.empty(num_rows, dtype=np.float_)
         cdef double converted
-        cdef int row = 0
         cdef double *data = <double *> col.data
         cdef char *field
         cdef char *empty_field = t.buf
@@ -624,11 +621,8 @@ cdef class CParser:
         cdef int replacing
         mask = set()
 
-        start_iteration(t, i)
-        while not finished_iteration(t):
-            if row == num_rows:
-                break
-            field = next_field(t, <int *>0)
+        for row in range(num_rows):
+            field = get_field(t, row)
             replace_info = None
             replacing = False
 
@@ -664,11 +658,10 @@ cdef class CParser:
                     raise ValueError()
             else:
                 data[row] = converted
-            row += 1
 
         if mask:
             return ma.masked_array(col, mask=[1 if i in mask else 0 for i in
-                                              range(row)])
+                                              range(num_rows)])
         else:
             return col
 
@@ -678,24 +671,20 @@ cdef class CParser:
         if nrows != -1:
             num_rows = nrows
 
-        cdef int row = 0
         cdef bytes field
         cdef int field_len
         cdef int max_len = 0
         cdef list fields_list = []
         mask = set()
 
-        start_iteration(t, i)
-        while not finished_iteration(t):
-            if row == num_rows:
-                break
-            field = next_field(t, &field_len)
+        for row in range(num_rows):
+            field = get_field(t, row)
             replace_info = None
 
-            if field_len == 0 and self.fill_empty:
+            if field == t.buf and self.fill_empty:
                 replace_info = self.fill_empty
 
-            elif field_len > 0 and self.fill_values and field in self.fill_values:
+            elif field != t.buf and self.fill_values and field in self.fill_values:
                 replace_info = self.fill_values[field]
 
             if replace_info is not None:
@@ -706,15 +695,15 @@ cdef class CParser:
                     field = el
 
             fields_list.append(field)
+            field_len = len(field)
             if field_len > max_len:
                 max_len = field_len
-            row += 1
 
         cdef np.ndarray col = np.array(fields_list, dtype=(np.str, max_len))
 
         if mask:
             return ma.masked_array(col, mask=[1 if i in mask else 0 for i in
-                                              range(row)])
+                                              range(num_rows)])
         else:
             return col
 
@@ -788,9 +777,18 @@ def _read_chunk(CParser self, start, end, try_int,
         delete_tokenizer(chunk_tokenizer)
         queue.pop()
         queue.put((None, e, i))
-    reconvert_cols = reconvert_queue.get()
-    for col in reconvert_cols:
+
+    reconvert_cols = sorted(reconvert_queue.get()) #TODO: check if sort is necessary
+    # line pointers have now shifted by one row after ordinary tokenization,
+    # so we add back the first pointer and remove the tail
+    rewind_line_ptrs(chunk_tokenizer)
+
+    for j, col in enumerate(reconvert_cols):
+        skip_cols = col if j == 0 else col - reconvert_cols[j - 1]
+        for k in range(skip_cols):
+            advance_line_ptrs(chunk_tokenizer) # ignore columns we're not using
         queue.put((self._convert_str(chunk_tokenizer, col, -1), i, col))
+
     delete_tokenizer(chunk_tokenizer)
     reconvert_queue.put(reconvert_cols) # return to the queue for other processes
 
