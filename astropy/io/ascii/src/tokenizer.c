@@ -18,6 +18,7 @@ tokenizer_t *create_tokenizer(char delimiter, char comment, char quotechar,
     tokenizer->quotechar = quotechar;
     tokenizer->output = 0;
     tokenizer->line_ptrs = 0;
+    tokenizer->read_ptrs = 0;
     tokenizer->output_pos = 0;
     tokenizer->line_ptrs_len = 0;
     tokenizer->num_cols = 0;
@@ -44,11 +45,13 @@ void delete_data(tokenizer_t *tokenizer)
     // an already freed Python object
 
     free(tokenizer->line_ptrs);
+    free(tokenizer->read_ptrs);
     free(tokenizer->output);
 
     // TODO: check whether rereading makes sense
     // Set pointers to 0 so we don't use freed memory when reading over again
     tokenizer->line_ptrs = 0;
+    tokenizer->read_ptrs = 0;
     tokenizer->output = 0;
 }
 
@@ -468,11 +471,16 @@ int tokenize(tokenizer_t *self, int end, int header, int num_cols)
 
         ++self->source_pos;
     }
+<<<<<<< HEAD
 
     RETURN(0);
+=======
+    
+    RETURN(NO_ERROR);
+>>>>>>> Changed system for advancing field pointers during conversion
 }
 
-long str_to_long(tokenizer_t *self, char *str)
+long str_to_long(tokenizer_t *self, char *str, int row)
 {
     char *tmp;
     long ret;
@@ -484,10 +492,12 @@ long str_to_long(tokenizer_t *self, char *str)
     else if (errno == ERANGE)
         self->code = OVERFLOW_ERROR;
 
+    self->read_ptrs[row] = tmp + 1; // advance to pos after null byte
     return ret;
 }
 
-double str_to_double(tokenizer_t *self, char *str)
+// TODO: rewrite this w/function pointers to avoid overhead
+double str_to_double(tokenizer_t *self, char *str, int row)
 {
     char *tmp;
     double val;
@@ -511,6 +521,7 @@ double str_to_double(tokenizer_t *self, char *str)
             self->code = OVERFLOW_ERROR;
     }
 
+    self->read_ptrs[row] = tmp + 1; // advance to pos after null byte
     return val;
 }
 
@@ -721,23 +732,53 @@ double xstrtod(const char *str, char **endptr, char decimal,
     return number;
 }
 
-char *get_field(tokenizer_t *self, int row)
+char *next_field(tokenizer_t *self, int row, int *field_len)
 {
-    char *field_ptr = self->line_ptrs[row];
+    char *field_ptr = self->read_ptrs[row];
+
+    if (field_len)
+    {
+        // pass through the entire field until reaching the delimiter
+        while (*self->read_ptrs[row] != '\x00')
+            ++self->read_ptrs[row];
+        ++self->read_ptrs[row]; // next field begins after the delimiter
+        *field_len = self->read_ptrs[row] - field_ptr;
+    }
+
     if (*field_ptr == '\x01') // empty field; this is a hack
         return self->buf;
     return field_ptr;
 }
 
-void advance_line_ptrs(tokenizer_t *self)
+void set_read_ptrs(tokenizer_t *self)
+{
+    self->read_ptrs = (char **)malloc(self->num_rows * sizeof(char *));
+    reset_read_ptrs(self);
+}
+        
+void reset_read_ptrs(tokenizer_t *self)
+{
+    int row;
+    for (row = 0; row < self->num_rows; ++row)
+        self->read_ptrs[row] = self->line_ptrs[row];
+}
+
+void update_line_ptrs(tokenizer_t *self)
+{
+    int row;
+    for (row = 0; row < self->num_rows; ++row)
+        self->line_ptrs[row] = self->read_ptrs[row];
+}
+
+void advance_read_ptrs(tokenizer_t *self)
 {
     int row;
     for (row = 0; row < self->num_rows; ++row)
     {
         // pass through the entire field until reaching the delimiter
-        while (*self->line_ptrs[row] != '\x00')
-            ++self->line_ptrs[row];
-        ++self->line_ptrs[row]; // next field begins after the delimiter
+        while (*self->read_ptrs[row] != '\x00')
+            ++self->read_ptrs[row];
+        ++self->read_ptrs[row]; // next field begins after the delimiter
     }
 }
 

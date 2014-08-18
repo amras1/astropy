@@ -43,6 +43,7 @@ typedef struct
     char quotechar;        // quote character
     char *output;          // single null-delimited string containing output
     char **line_ptrs;      // array of pointers to the beginning of each line
+    char **read_ptrs;      // array of pointers to current field in each line
     int output_pos;        // current index in output
     int line_ptrs_len;     // length of line_ptrs in memory
     int num_cols;          // number of table columns
@@ -77,12 +78,15 @@ void delete_data(tokenizer_t *tokenizer);
 void resize_col(tokenizer_t *self, int index);
 int skip_lines(tokenizer_t *self, int offset, int header);
 int tokenize(tokenizer_t *self, int end, int header, int num_cols);
-long str_to_long(tokenizer_t *self, char *str);
-double str_to_double(tokenizer_t *self, char *str);
+long str_to_long(tokenizer_t *self, char *str, int row);
+double str_to_double(tokenizer_t *self, char *str, int row);
 double xstrtod(const char *str, char **endptr, char decimal,
                char sci, char tsep, int skip_trailing);
-char *get_field(tokenizer_t *self, int row);
-void advance_line_ptrs(tokenizer_t *self);
+char *next_field(tokenizer_t *self, int row, int *field_len);
+void set_read_ptrs(tokenizer_t *self);
+void reset_read_ptrs(tokenizer_t *self);
+void update_line_ptrs(tokenizer_t *self);
+void advance_read_ptrs(tokenizer_t *self);
 void rewind_line_ptrs(tokenizer_t *self);
 char *get_line(char *ptr, int *len, int map_len);
 

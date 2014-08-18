@@ -1,4 +1,3 @@
-# cython: profile=True
 # Licensed under a 3-clause BSD style license - see LICENSE.rst
 
 import csv
@@ -54,6 +53,7 @@ cdef extern from "src/tokenizer.h":
         char quotechar         # quote character
         char *output           # single null-delimited string containing output
         char **line_ptrs       # array of pointers to the beginning of each line
+        char **read_ptrs       # array of pointers to current field in each line
         int output_pos         # current index in output
         int line_ptrs_len      # length of line_ptrs in memory
         int num_cols           # number of table columns
@@ -85,11 +85,13 @@ cdef extern from "src/tokenizer.h":
     void delete_tokenizer(tokenizer_t *tokenizer)
     int skip_lines(tokenizer_t *self, int offset, int header)
     int tokenize(tokenizer_t *self, int end, int header, int num_cols)
-    long str_to_long(tokenizer_t *self, char *str)
-    double fast_str_to_double(tokenizer_t *self, char *str)
-    double str_to_double(tokenizer_t *self, char *str)
-    char *get_field(tokenizer_t *self, int row)
-    void advance_line_ptrs(tokenizer_t *self)
+    long str_to_long(tokenizer_t *self, char *str, int row)
+    double str_to_double(tokenizer_t *self, char *str, int row)
+    char *next_field(tokenizer_t *self, int row, int *field_len)
+    void set_read_ptrs(tokenizer_t *self)
+    void reset_read_ptrs(tokenizer_t *self)
+    void update_line_ptrs(tokenizer_t *self) #TODO: maybe change this
+    void advance_read_ptrs(tokenizer_t *self)
     void rewind_line_ptrs(tokenizer_t *self)
     char *get_line(char *ptr, int *len, int map_len)
 
@@ -372,6 +374,7 @@ cdef class CParser:
             self.raise_error("an error occurred while parsing table data")
         elif self.tokenizer.num_rows == 0: # no data
             return [np.array([], dtype=np.int_)] * self.width
+        set_read_ptrs(self.tokenizer) # initialize reading pointers for conversion
         self._set_fill_values()
         cdef int num_rows = self.tokenizer.num_rows
         if self.data_end is not None and self.data_end < 0: # negative indexing
@@ -452,7 +455,7 @@ cdef class CParser:
             seen_str[name] = False
             seen_numeric[name] = False
 
-        for chunk in chunks:
+        for i,chunk in enumerate(chunks):
             for name in chunk:
                 if chunk[name].dtype.kind in ('S', 'U'):
                     # string values in column
@@ -529,7 +532,8 @@ cdef class CParser:
 
         for i, name in enumerate(self.names):
             if name not in self.use_cols:
-                advance_line_ptrs(t)
+                advance_read_ptrs(t)
+                update_line_ptrs(t)
                 continue
             # Try int first, then float, then string
             try:
@@ -540,12 +544,14 @@ cdef class CParser:
                 try:
                     if try_float and not try_float[name]:
                         raise ValueError()
+                    reset_read_ptrs(t) # rewind pointers to row fields
                     cols[name] = self._convert_float(t, i, num_rows)
                 except ValueError:
                     if try_string and not try_string[name]:
                         raise ValueError('Column {0} failed to convert'.format(name))
+                    reset_read_ptrs(t)
                     cols[name] = self._convert_str(t, i, num_rows)
-            advance_line_ptrs(t) # move to the next field in each column
+            update_line_ptrs(t) # set line pointers to new column position
 
         return cols
 
@@ -564,7 +570,7 @@ cdef class CParser:
 
         for row in range(num_rows):
             # retrieve the next field as a C pointer
-            field = get_field(t, row)
+            field = next_field(t, row, <int *>0)
             replace_info = None
 
             if field == empty_field and self.fill_empty:
@@ -585,12 +591,12 @@ cdef class CParser:
                     mask.add(row)
                     new_value = str(replace_info[0]).encode('ascii')
                     # try converting the new value
-                    converted = str_to_long(t, new_value)
+                    converted = str_to_long(t, new_value, row)
                 else:
-                    converted = str_to_long(t, field)
+                    converted = str_to_long(t, field, row)
             else:
                 # convert the field to long (widest integer type)
-                converted = str_to_long(t, field)
+                converted = str_to_long(t, field, row)
 
             if t.code in (CONVERSION_ERROR, OVERFLOW_ERROR):
                 # no dice
@@ -622,7 +628,7 @@ cdef class CParser:
         mask = set()
 
         for row in range(num_rows):
-            field = get_field(t, row)
+            field = next_field(t, row, <int *>0)
             replace_info = None
             replacing = False
 
@@ -638,11 +644,11 @@ cdef class CParser:
                     mask.add(row)
                     new_value = str(replace_info[0]).encode('ascii')
                     replacing = True
-                    converted = str_to_double(t, new_value)
+                    converted = str_to_double(t, new_value, row)
                 else:
-                    converted = str_to_double(t, field)
+                    converted = str_to_double(t, field, row)
             else:
-                converted = str_to_double(t, field)
+                converted = str_to_double(t, field, row)
 
             if t.code == CONVERSION_ERROR:
                 t.code = NO_ERROR
@@ -672,19 +678,20 @@ cdef class CParser:
             num_rows = nrows
 
         cdef bytes field
+        cdef char *empty_field = t.buf
         cdef int field_len
         cdef int max_len = 0
         cdef list fields_list = []
         mask = set()
 
         for row in range(num_rows):
-            field = get_field(t, row)
+            field = next_field(t, row, &field_len)
             replace_info = None
 
-            if field == t.buf and self.fill_empty:
+            if field == empty_field and self.fill_empty:
                 replace_info = self.fill_empty
 
-            elif field != t.buf and self.fill_values and field in self.fill_values:
+            elif field != empty_field and self.fill_values and field in self.fill_values:
                 replace_info = self.fill_values[field]
 
             if replace_info is not None:
@@ -695,7 +702,6 @@ cdef class CParser:
                     field = el
 
             fields_list.append(field)
-            field_len = len(field)
             if field_len > max_len:
                 max_len = field_len
 
@@ -763,6 +769,7 @@ def _read_chunk(CParser self, start, end, try_int,
         data = dict((name, np.array([], np.int_)) for name in self.get_names())
     else:
         try:
+            set_read_ptrs(chunk_tokenizer)
             data = self._convert_data(chunk_tokenizer,
                                       try_int, try_float, try_string, -1)
         except Exception as e:
@@ -782,11 +789,12 @@ def _read_chunk(CParser self, start, end, try_int,
     # line pointers have now shifted by one row after ordinary tokenization,
     # so we add back the first pointer and remove the tail
     rewind_line_ptrs(chunk_tokenizer)
+    reset_read_ptrs(chunk_tokenizer)
 
     for j, col in enumerate(reconvert_cols):
-        skip_cols = col if j == 0 else col - reconvert_cols[j - 1]
+        skip_cols = col if j == 0 else col - reconvert_cols[j - 1] - 1
         for k in range(skip_cols):
-            advance_line_ptrs(chunk_tokenizer) # ignore columns we're not using
+            advance_read_ptrs(chunk_tokenizer) # ignore columns we're not using
         queue.put((self._convert_str(chunk_tokenizer, col, -1), i, col))
 
     delete_tokenizer(chunk_tokenizer)
