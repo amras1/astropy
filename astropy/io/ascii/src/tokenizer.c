@@ -43,7 +43,6 @@ void delete_data(tokenizer_t *tokenizer)
 {
     // Don't free tokenizer->source because it points to part of
     // an already freed Python object
-
     free(tokenizer->line_ptrs);
     free(tokenizer->read_ptrs);
     free(tokenizer->output);
@@ -222,6 +221,8 @@ int tokenize(tokenizer_t *self, int end, int header, int num_cols)
     // Allocate memory for structures used during tokenization
     if (!self->output)
         self->output = (char *) malloc(self->source_len);
+    else // Might have been allocated before while tokenizing the header
+        self->output = (char *) realloc(self->output, self->source_len);
     if (!self->line_ptrs)
         self->line_ptrs = (char **) malloc(INITIAL_NUM_LINES * sizeof(char *));
     self->line_ptrs[0] = self->output;
@@ -471,13 +472,8 @@ int tokenize(tokenizer_t *self, int end, int header, int num_cols)
 
         ++self->source_pos;
     }
-<<<<<<< HEAD
 
-    RETURN(0);
-=======
-    
     RETURN(NO_ERROR);
->>>>>>> Changed system for advancing field pointers during conversion
 }
 
 long str_to_long(tokenizer_t *self, char *str, int row)
@@ -741,8 +737,8 @@ char *next_field(tokenizer_t *self, int row, int *field_len)
         // pass through the entire field until reaching the delimiter
         while (*self->read_ptrs[row] != '\x00')
             ++self->read_ptrs[row];
-        ++self->read_ptrs[row]; // next field begins after the delimiter
         *field_len = self->read_ptrs[row] - field_ptr;
+        ++self->read_ptrs[row]; // next field begins after the delimiter
     }
 
     if (*field_ptr == '\x01') // empty field; this is a hack

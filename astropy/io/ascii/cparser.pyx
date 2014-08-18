@@ -455,7 +455,7 @@ cdef class CParser:
             seen_str[name] = False
             seen_numeric[name] = False
 
-        for i,chunk in enumerate(chunks):
+        for chunk in chunks:
             for name in chunk:
                 if chunk[name].dtype.kind in ('S', 'U'):
                     # string values in column
@@ -566,6 +566,9 @@ cdef class CParser:
         cdef char *field
         cdef char *empty_field = t.buf # memory address of designated empty buffer
         cdef bytes new_value
+        cdef int field_len
+        cdef bytes tmp_bytes
+        cdef char *tmp_ptr
         mask = set() # set of indices for masked values
 
         for row in range(num_rows):
@@ -575,12 +578,16 @@ cdef class CParser:
 
             if field == empty_field and self.fill_empty:
                 replace_info = self.fill_empty
+                field_len = 1 # field is '\x01'
             # hopefully this implicit char * -> byte conversion for fill values
             # checking can be avoided in most cases, since self.fill_values will
             # be empty in the default case (self.fill_empty will do the work
             # instead)
-            elif field != empty_field and self.fill_values and field in self.fill_values:
-                replace_info = self.fill_values[field]
+            elif field != empty_field and self.fill_values:
+                tmp_bytes = field
+                if tmp_bytes in self.fill_values:
+                    replace_info = self.fill_values[field]
+                    field_len = len(tmp_bytes)
 
             if replace_info is not None:
                 # Either this column applies to the field as specified in the 
@@ -590,8 +597,11 @@ cdef class CParser:
                    or (len(replace_info) == 1 and self.names[i] in self.fill_names):
                     mask.add(row)
                     new_value = str(replace_info[0]).encode('ascii')
+                    tmp_ptr = t.read_ptrs[row]
                     # try converting the new value
                     converted = str_to_long(t, new_value, row)
+                    # advance the read pointer
+                    t.read_ptrs[row] = tmp_ptr + field_len + 1
                 else:
                     converted = str_to_long(t, field, row)
             else:
@@ -624,6 +634,9 @@ cdef class CParser:
         cdef char *field
         cdef char *empty_field = t.buf
         cdef bytes new_value
+        cdef int field_len
+        cdef bytes tmp_bytes
+        cdef char *tmp_ptr
         cdef int replacing
         mask = set()
 
@@ -634,9 +647,13 @@ cdef class CParser:
 
             if field == empty_field and self.fill_empty:
                 replace_info = self.fill_empty
+                field_len = 1
 
-            elif field != empty_field and self.fill_values and field in self.fill_values:
-                replace_info = self.fill_values[field]
+            elif field != empty_field and self.fill_values:
+                tmp_bytes = field
+                if tmp_bytes in self.fill_values:
+                    replace_info = self.fill_values[field]
+                    field_len = len(tmp_bytes)
 
             if replace_info is not None:
                 if (len(replace_info) > 1 and self.names[i] in replace_info[1:]) \
@@ -644,7 +661,9 @@ cdef class CParser:
                     mask.add(row)
                     new_value = str(replace_info[0]).encode('ascii')
                     replacing = True
+                    tmp_ptr = t.read_ptrs[row]
                     converted = str_to_double(t, new_value, row)
+                    t.read_ptrs[row] = tmp_ptr + field_len + 1
                 else:
                     converted = str_to_double(t, field, row)
             else:
@@ -671,7 +690,7 @@ cdef class CParser:
         else:
             return col
 
-    cdef _convert_str(self, tokenizer_t *t, int i, int nrows):
+    cdef np.ndarray _convert_str(self, tokenizer_t *t, int i, int nrows):
         # similar to _convert_int, but no actual conversion
         cdef int num_rows = t.num_rows
         if nrows != -1:
