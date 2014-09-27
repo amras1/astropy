@@ -562,8 +562,13 @@ cdef class CParser:
             field = next_field(t, <int *>0)
             replace_info = None
 
-            if field == empty_field and self.fill_empty:
-                replace_info = self.fill_empty
+            if field == empty_field:
+                if self.fill_empty:
+                    replace_info = self.fill_empty
+                else:
+                    # empty field without replacement, invalid
+                    raise ValueError()
+
             # hopefully this implicit char * -> byte conversion for fill values
             # checking can be avoided in most cases, since self.fill_values will
             # be empty in the default case (self.fill_empty will do the work
@@ -581,6 +586,8 @@ cdef class CParser:
                     new_value = str(replace_info[0]).encode('ascii')
                     # try converting the new value
                     converted = str_to_long(t, new_value)
+                elif field == empty_field:
+                    raise ValueError()
                 else:
                     converted = str_to_long(t, field)
             else:
@@ -626,8 +633,11 @@ cdef class CParser:
             replace_info = None
             replacing = False
 
-            if field == empty_field and self.fill_empty:
-                replace_info = self.fill_empty
+            if field == empty_field:
+                if self.fill_empty:
+                    replace_info = self.fill_empty
+                else:
+                    raise ValueError()
 
             elif field != empty_field and self.fill_values and field in self.fill_values:
                 replace_info = self.fill_values[field]
@@ -639,6 +649,8 @@ cdef class CParser:
                     new_value = str(replace_info[0]).encode('ascii')
                     replacing = True
                     converted = str_to_double(t, new_value)
+                elif field == empty_field:
+                    raise ValueError()
                 else:
                     converted = str_to_double(t, field)
             else:
